@@ -92,7 +92,7 @@ export function MediaLibrary() {
             <p className="text-xs mt-1">or use the button above</p>
           </div>
         ) : (
-          <div className="space-y-3">
+          <div className="space-y-4">
             {mediaFiles.map((media) => {
               const timelineCount = timelineItems.filter(item => item.mediaId === media.id).length;
               const isInTimeline = timelineCount > 0;

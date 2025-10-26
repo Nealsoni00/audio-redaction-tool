@@ -14,6 +14,7 @@ export function ResizableDivider({ direction, onResize, className = '' }: Resiza
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
+    e.stopPropagation();
     isDraggingRef.current = true;
     startPosRef.current = direction === 'horizontal' ? e.clientY : e.clientX;
 
@@ -47,18 +48,33 @@ export function ResizableDivider({ direction, onResize, className = '' }: Resiza
     <div
       className={`${className} ${
         direction === 'horizontal'
-          ? 'h-1 cursor-ns-resize hover:bg-primary/20 active:bg-primary/40 transition-colors'
-          : 'w-1 cursor-ew-resize hover:bg-primary/20 active:bg-primary/40 transition-colors'
-      } bg-border flex-shrink-0 relative group`}
-      onMouseDown={handleMouseDown}
+          ? 'h-1.5 cursor-ns-resize hover:bg-primary/30 active:bg-primary/50'
+          : 'w-1.5 cursor-ew-resize hover:bg-primary/30 active:bg-primary/50'
+      } bg-border flex-shrink-0 relative group transition-colors select-none`}
+      onMouseDownCapture={handleMouseDown}
+      style={{
+        touchAction: 'none',
+        zIndex: 100,
+        position: 'relative',
+      }}
     >
+      {/* Expanded hit area for easier interaction */}
+      <div
+        className={`absolute inset-0 ${
+          direction === 'horizontal'
+            ? '-top-1 -bottom-1'
+            : '-left-1 -right-1'
+        }`}
+        style={{ zIndex: 101 }}
+      />
       {/* Visual indicator on hover */}
       <div
         className={`absolute ${
           direction === 'horizontal'
-            ? 'left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-8 h-1 group-hover:h-1.5'
-            : 'left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 h-8 w-1 group-hover:w-1.5'
-        } bg-primary/60 rounded-full opacity-0 group-hover:opacity-100 transition-all pointer-events-none`}
+            ? 'left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-16 h-1 group-hover:h-1.5'
+            : 'left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 h-16 w-1 group-hover:w-1.5'
+        } bg-primary rounded-full opacity-0 group-hover:opacity-100 transition-all pointer-events-none`}
+        style={{ zIndex: 102 }}
       />
     </div>
   );
