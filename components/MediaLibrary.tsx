@@ -4,10 +4,10 @@ import { useCallback, useEffect } from 'react';
 import { useStore } from '@/lib/store';
 import { Button } from '@/components/ui/button';
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from '@/components/ui/context-menu';
-import { FileAudio, Trash2, Plus } from 'lucide-react';
+import { FileAudio, Trash2, Plus, CheckCircle2 } from 'lucide-react';
 
 export function MediaLibrary() {
-  const { mediaFiles, addMediaFile, removeMediaFile, loadMediaFiles, addToTimeline } = useStore();
+  const { mediaFiles, addMediaFile, removeMediaFile, loadMediaFiles, addToTimeline, timelineItems } = useStore();
 
   useEffect(() => {
     loadMediaFiles();
@@ -92,44 +92,61 @@ export function MediaLibrary() {
             <p className="text-xs mt-1">or use the button above</p>
           </div>
         ) : (
-          <div className="space-y-2">
-            {mediaFiles.map((media) => (
-              <ContextMenu key={media.id}>
-                <ContextMenuTrigger>
-                  <div
-                    className="p-3 border rounded-lg hover:bg-accent cursor-move transition-colors"
-                    draggable
-                    onDragStart={(e) => handleMediaDragStart(e, media.id)}
-                  >
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-1">
-                          <FileAudio className="h-4 w-4 flex-shrink-0" />
-                          <span className="text-sm font-medium truncate">
-                            {media.name}
-                          </span>
-                        </div>
-                        <div className="text-xs text-muted-foreground">
-                          {formatDuration(media.duration)}
+          <div className="space-y-3">
+            {mediaFiles.map((media) => {
+              const timelineCount = timelineItems.filter(item => item.mediaId === media.id).length;
+              const isInTimeline = timelineCount > 0;
+              
+              return (
+                <ContextMenu key={media.id}>
+                  <ContextMenuTrigger>
+                    <div
+                      className={`p-4 border rounded-lg hover:bg-accent cursor-move transition-colors ${
+                        isInTimeline ? 'border-primary/50 bg-primary/5' : ''
+                      }`}
+                      draggable
+                      onDragStart={(e) => handleMediaDragStart(e, media.id)}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-2">
+                            <FileAudio className="h-4 w-4 flex-shrink-0" />
+                            <span className="text-sm font-medium truncate">
+                              {media.name}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <div className="text-xs text-muted-foreground">
+                              {formatDuration(media.duration)}
+                            </div>
+                            {isInTimeline && (
+                              <div className="flex items-center gap-1 text-xs text-primary">
+                                <CheckCircle2 className="h-3 w-3" />
+                                <span>
+                                  On Timeline{timelineCount > 1 ? ` (${timelineCount}×)` : ''}
+                                </span>
+                              </div>
+                            )}
+                          </div>
                         </div>
                       </div>
                     </div>
-                  </div>
-                </ContextMenuTrigger>
-                <ContextMenuContent>
-                  <ContextMenuItem onClick={() => addToTimeline(media.id)}>
-                    Add to Timeline
-                  </ContextMenuItem>
-                  <ContextMenuItem
-                    onClick={() => removeMediaFile(media.id)}
-                    className="text-destructive"
-                  >
-                    <Trash2 className="mr-2 h-4 w-4" />
-                    Delete
-                  </ContextMenuItem>
-                </ContextMenuContent>
-              </ContextMenu>
-            ))}
+                  </ContextMenuTrigger>
+                  <ContextMenuContent>
+                    <ContextMenuItem onClick={() => addToTimeline(media.id)}>
+                      Add to Timeline
+                    </ContextMenuItem>
+                    <ContextMenuItem
+                      onClick={() => removeMediaFile(media.id)}
+                      className="text-destructive"
+                    >
+                      <Trash2 className="mr-2 h-4 w-4" />
+                      Delete
+                    </ContextMenuItem>
+                  </ContextMenuContent>
+                </ContextMenu>
+              );
+            })}
           </div>
         )}
       </div>

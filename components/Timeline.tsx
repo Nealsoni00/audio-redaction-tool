@@ -5,6 +5,7 @@ import { useStore } from '@/lib/store';
 import { Button } from '@/components/ui/button';
 import { Play, Pause, Trash2, ZoomIn, ZoomOut, Download, Volume2, VolumeX, FileDown, X } from 'lucide-react';
 import { Separator } from '@/components/ui/separator';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
 export function Timeline() {
   const {
@@ -427,54 +428,74 @@ export function Timeline() {
       <div className="p-4 border-b bg-background flex-shrink-0 z-10">
         <div className="flex items-center justify-between gap-4">
           <div className="flex items-center gap-4">
-            <Button
-              size="icon"
-              variant="outline"
-              onClick={togglePlayback}
-            >
-              {playbackState.isPlaying ? (
-                <Pause className="h-4 w-4" />
-              ) : (
-                <Play className="h-4 w-4" />
-              )}
-            </Button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  size="icon"
+                  variant="outline"
+                  onClick={togglePlayback}
+                >
+                  {playbackState.isPlaying ? (
+                    <Pause className="h-4 w-4" />
+                  ) : (
+                    <Play className="h-4 w-4" />
+                  )}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                {playbackState.isPlaying ? 'Pause' : 'Play'} timeline
+              </TooltipContent>
+            </Tooltip>
             <div className="text-sm font-mono tabular-nums">
               {formatTime(playbackState.currentTime, true)} / {formatTime(playbackState.duration, true)}
             </div>
 
             {timelineItems.length > 0 && (
               <>
-                <Button
-                  variant="default"
-                  size="sm"
-                  onClick={handleExport}
-                  className="ml-4"
-                >
-                  <Download className="mr-2 h-4 w-4" />
-                  Export Timeline
-                </Button>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="default"
+                      size="sm"
+                      onClick={handleExport}
+                      className="ml-4"
+                    >
+                      <Download className="mr-2 h-4 w-4" />
+                      Export Timeline
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    Export the entire timeline as a single audio file with all redactions applied
+                  </TooltipContent>
+                </Tooltip>
 
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setGlobalRedactionMode(
-                    globalRedactionMode === 'tone' ? 'silence' : 'tone'
-                  )}
-                  className="ml-2"
-                  title="Toggle default redaction playback mode for all redacted sections"
-                >
-                  {globalRedactionMode === 'tone' ? (
-                    <>
-                      <Volume2 className="mr-2 h-4 w-4" />
-                      Tone
-                    </>
-                  ) : (
-                    <>
-                      <VolumeX className="mr-2 h-4 w-4" />
-                      Silence
-                    </>
-                  )}
-                </Button>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setGlobalRedactionMode(
+                        globalRedactionMode === 'tone' ? 'silence' : 'tone'
+                      )}
+                      className="ml-2"
+                    >
+                      {globalRedactionMode === 'tone' ? (
+                        <>
+                          <Volume2 className="mr-2 h-4 w-4" />
+                          Tone
+                        </>
+                      ) : (
+                        <>
+                          <VolumeX className="mr-2 h-4 w-4" />
+                          Silence
+                        </>
+                      )}
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    Toggle default redaction playback mode: {globalRedactionMode === 'tone' ? 'Switch to silence' : 'Switch to tone'}
+                  </TooltipContent>
+                </Tooltip>
               </>
             )}
           </div>
@@ -482,13 +503,27 @@ export function Timeline() {
           {/* Zoom Controls */}
           <div className="flex items-center gap-2 will-change-auto">
             <span className="text-xs text-muted-foreground">Zoom:</span>
-            <Button size="icon" variant="outline" onClick={handleZoomOut}>
-              <ZoomOut className="h-4 w-4" />
-            </Button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button size="icon" variant="outline" onClick={handleZoomOut}>
+                  <ZoomOut className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                Zoom out timeline view
+              </TooltipContent>
+            </Tooltip>
             <span className="text-xs font-mono w-12 text-center tabular-nums">{Math.round(zoom)}px/s</span>
-            <Button size="icon" variant="outline" onClick={handleZoomIn}>
-              <ZoomIn className="h-4 w-4" />
-            </Button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button size="icon" variant="outline" onClick={handleZoomIn}>
+                  <ZoomIn className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                Zoom in timeline view
+              </TooltipContent>
+            </Tooltip>
             <span className="text-xs text-muted-foreground ml-2">
               (or Cmd/Ctrl + Scroll)
             </span>
@@ -640,14 +675,21 @@ export function Timeline() {
                           {formatTime(item.duration)}
                         </div>
                       </div>
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        className="h-6 w-6 flex-shrink-0"
-                        onClick={(e) => handleRemoveItem(e, item.id)}
-                      >
-                        <Trash2 className="h-3 w-3" />
-                      </Button>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="h-6 w-6 flex-shrink-0"
+                            onClick={(e) => handleRemoveItem(e, item.id)}
+                          >
+                            <Trash2 className="h-3 w-3" />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          Remove from timeline
+                        </TooltipContent>
+                      </Tooltip>
                     </div>
                   </div>
                 );

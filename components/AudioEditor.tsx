@@ -6,7 +6,7 @@ import { TimelineItem } from '@/lib/types';
 import WaveSurfer from 'wavesurfer.js';
 import RegionsPlugin from 'wavesurfer.js/dist/plugins/regions';
 import { Button } from '@/components/ui/button';
-import { Play, Pause, Scissors, Trash2, ZoomIn, ZoomOut, Volume2, VolumeX } from 'lucide-react';
+import { Play, Pause, Trash2, ZoomIn, ZoomOut, Volume2, VolumeX } from 'lucide-react';
 import { Separator } from '@/components/ui/separator';
 import { TranscriptView } from './TranscriptView';
 import { v4 as uuidv4 } from 'uuid';
@@ -488,41 +488,6 @@ export function AudioEditor({ timelineItemId }: AudioEditorProps) {
     wavesurferRef.current.playPause();
   };
 
-  const handleAddBreakpoint = () => {
-    if (!wavesurferRef.current || !timelineItem) return;
-
-    const currentTime = wavesurferRef.current.getCurrentTime();
-
-    // Find the clip that contains the current time
-    const clipIndex = timelineItem.clips.findIndex(
-      (clip) => currentTime >= clip.startTime && currentTime <= clip.endTime
-    );
-
-    if (clipIndex === -1) return;
-
-    const clip = timelineItem.clips[clipIndex];
-
-    // Split the clip at the current time
-    const newClip1 = {
-      id: uuidv4(),
-      startTime: clip.startTime,
-      endTime: currentTime,
-      muted: clip.muted,
-    };
-
-    const newClip2 = {
-      id: uuidv4(),
-      startTime: currentTime,
-      endTime: clip.endTime,
-      muted: clip.muted,
-    };
-
-    // Remove the old clip and add the two new clips
-    removeClip(timelineItemId, clip.id);
-    addClip(timelineItemId, newClip1);
-    addClip(timelineItemId, newClip2);
-  };
-
   const handleDeleteClip = () => {
     if (!wavesurferRef.current || !timelineItem) return;
 
@@ -781,10 +746,6 @@ export function AudioEditor({ timelineItemId }: AudioEditorProps) {
             ) : (
               <Play className="h-4 w-4" />
             )}
-          </Button>
-          <Button onClick={handleAddBreakpoint} variant="outline" size="sm">
-            <Scissors className="mr-2 h-4 w-4" />
-            Add Breakpoint
           </Button>
           <Button onClick={handleDeleteClip} variant="outline" size="sm">
             <Trash2 className="mr-2 h-4 w-4" />
