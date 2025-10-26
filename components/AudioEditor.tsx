@@ -267,9 +267,11 @@ export function AudioEditor({ timelineItemId }: AudioEditorProps) {
       }
     });
 
-    // Enable region drawing
+    // Enable region drawing with drag and resize enabled
     regions.enableDragSelection({
       color: 'rgba(124, 58, 237, 0.3)',
+      drag: true,
+      resize: true,
     });
 
     // Listen for region creation
@@ -288,9 +290,41 @@ export function AudioEditor({ timelineItemId }: AudioEditorProps) {
       setSelectedRegion({ start: region.start, end: region.end });
     });
 
-    // Listen for region updates
+    // Listen for region updates (drag and resize)
     regions.on('region-updated', (region) => {
-      setSelectedRegion({ start: region.start, end: region.end });
+      const color = region.color || '';
+      
+      // Check if this is a muted region (red/orange) or selection region (purple)
+      if (region.id && (color.includes('239, 68, 68') || color.includes('255, 165, 0'))) {
+        // This is a muted region - update the clip boundaries
+        const clipId = region.id;
+        updateClip(timelineItemId, clipId, {
+          startTime: region.start,
+          endTime: region.end,
+        });
+      } else if (color.includes('124, 58, 237')) {
+        // This is a selection region (purple)
+        setSelectedRegion({ start: region.start, end: region.end });
+      }
+    });
+
+    // Listen for region clicks to select muted clips
+    regions.on('region-clicked', (region, e) => {
+      const color = region.color || '';
+      
+      // If clicking a muted region, select it for editing
+      if (region.id && (color.includes('239, 68, 68') || color.includes('255, 165, 0'))) {
+        e.stopPropagation();
+        setSelectedRegion(null);
+        setSelectedClipId(region.id);
+        // Remove any purple selection regions
+        regions.getRegions().forEach((r) => {
+          const rColor = r.color || '';
+          if (rColor.includes('124, 58, 237')) {
+            r.remove();
+          }
+        });
+      }
     });
 
     wavesurferRef.current = wavesurfer;
@@ -378,14 +412,15 @@ export function AudioEditor({ timelineItemId }: AudioEditorProps) {
             start: clip.startTime,
             end: clip.endTime,
             color,
-            drag: false,
-            resize: false,
+            drag: true,
+            resize: true,
+            id: clip.id, // Store clip ID for updates
           });
           
-          // Make muted regions clickable with visual feedback
+          // Make muted regions draggable with visual feedback
           if (region && region.element) {
-            region.element.style.cursor = 'pointer';
-            region.element.title = 'Click to edit or un-redact this section';
+            region.element.style.cursor = 'move';
+            region.element.title = 'Drag to move or resize this redacted section';
           }
         }
       });

@@ -660,11 +660,7 @@ export function Timeline() {
                               left: `${clipLeftPx}px`,
                               width: `${clipWidthPx}px`,
                             }}
-                          >
-                            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-red-500 text-xs font-bold opacity-70">
-                              REDACTED
-                            </div>
-                          </div>
+                          />
                         );
                       })}
 

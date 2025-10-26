@@ -3,14 +3,29 @@
 import { MediaLibrary } from '@/components/MediaLibrary';
 import { Timeline } from '@/components/Timeline';
 import { AudioEditor } from '@/components/AudioEditor';
+import { ResizableDivider } from '@/components/ResizableDivider';
 import { useStore } from '@/lib/store';
-import { useEffect, useState } from 'react';
+import { useLocalStorage } from '@/lib/useLocalStorage';
+import { useEffect, useState, useCallback } from 'react';
 import { Info, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 export default function Home() {
   const { selectedTimelineItemId } = useStore();
   const [showPrivacyInfo, setShowPrivacyInfo] = useState(false);
+
+  // Panel sizes (in pixels) with localStorage persistence
+  const [leftPanelWidth, setLeftPanelWidth] = useLocalStorage('leftPanelWidth', 320);
+  const [timelinePanelHeight, setTimelinePanelHeight] = useLocalStorage('timelinePanelHeight', 300);
+
+  // Resize handlers
+  const handleLeftPanelResize = useCallback((delta: number) => {
+    setLeftPanelWidth((prev) => Math.max(200, Math.min(600, prev + delta)));
+  }, [setLeftPanelWidth]);
+
+  const handleTimelinePanelResize = useCallback((delta: number) => {
+    setTimelinePanelHeight((prev) => Math.max(150, Math.min(800, prev + delta)));
+  }, [setTimelinePanelHeight]);
 
   // Suppress AbortError globally
   useEffect(() => {
@@ -154,18 +169,31 @@ export default function Home() {
       {/* Main Content */}
       <div className="flex-1 flex overflow-hidden">
         {/* Left Pane - Media Library */}
-        <div className="w-80 flex-shrink-0">
+        <div
+          className="flex-shrink-0"
+          style={{ width: `${leftPanelWidth}px` }}
+        >
           <MediaLibrary />
         </div>
 
-        {/* Middle Pane - Timeline */}
-        <div className="flex-1 flex flex-col overflow-hidden" style={{ width: '100%' }}>
-          <div className="h-1/3 border-b overflow-hidden">
+        {/* Vertical Divider */}
+        <ResizableDivider direction="vertical" onResize={handleLeftPanelResize} />
+
+        {/* Middle/Right Panes - Timeline and Editor */}
+        <div className="flex-1 flex flex-col overflow-hidden" style={{ width: 0 }}>
+          {/* Timeline Pane */}
+          <div
+            className="overflow-hidden"
+            style={{ height: `${timelinePanelHeight}px` }}
+          >
             <Timeline />
           </div>
 
+          {/* Horizontal Divider */}
+          <ResizableDivider direction="horizontal" onResize={handleTimelinePanelResize} />
+
           {/* Bottom Pane - Media Editor */}
-          <div className="flex-1 overflow-hidden">
+          <div className="flex-1 overflow-hidden" style={{ height: 0 }}>
             {selectedTimelineItemId ? (
               <AudioEditor timelineItemId={selectedTimelineItemId} />
             ) : (
