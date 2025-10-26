@@ -618,29 +618,6 @@ export function AudioEditor({ timelineItemId }: AudioEditorProps) {
     });
   };
 
-  const handleDeleteSelection = () => {
-    if (!selectedRegion || !timelineItem) return;
-
-    // Find all clips that overlap with the selection
-    const overlappingClips = timelineItem.clips.filter(
-      (clip) =>
-        (selectedRegion.start <= clip.startTime && selectedRegion.end > clip.startTime) ||
-        (selectedRegion.start < clip.endTime && selectedRegion.end >= clip.endTime) ||
-        (selectedRegion.start >= clip.startTime && selectedRegion.end <= clip.endTime)
-    );
-
-    // Delete each overlapping clip
-    overlappingClips.forEach((clip) => {
-      removeClip(timelineItemId, clip.id);
-    });
-
-    // Clear selection
-    setSelectedRegion(null);
-    if (regionsRef.current) {
-      regionsRef.current.getRegions().forEach((r) => r.remove());
-    }
-  };
-
   const handleClearSelection = () => {
     setSelectedRegion(null);
     if (regionsRef.current) {
@@ -823,9 +800,6 @@ export function AudioEditor({ timelineItemId }: AudioEditorProps) {
               </div>
               <Button onClick={handleMuteSelection} variant="outline" size="sm">
                 Mute Selection
-              </Button>
-              <Button onClick={handleDeleteSelection} variant="outline" size="sm">
-                Delete Selection
               </Button>
               <Button onClick={handleClearSelection} variant="ghost" size="sm">
                 Clear

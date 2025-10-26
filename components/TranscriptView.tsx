@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useStore } from '@/lib/store';
 import { Button } from '@/components/ui/button';
-import { Loader2, Volume2, VolumeX } from 'lucide-react';
+import { Loader2, Volume2, VolumeX, AlertCircle } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 
 interface TranscriptViewProps {
@@ -145,10 +145,35 @@ export function TranscriptView({ timelineItemId }: TranscriptViewProps) {
   if (!timelineItem.transcript) {
     return (
       <div className="p-4">
-        <div className="border rounded-lg p-6 text-center">
-          <p className="text-sm text-muted-foreground mb-4">
+        <div className="border rounded-lg p-6 text-center space-y-4">
+          <p className="text-sm text-muted-foreground">
             No transcript available. Transcribe this audio to enable word-level redaction.
           </p>
+          
+          {/* Privacy Warning */}
+          <div className="border-l-4 border-blue-500 bg-blue-50 dark:bg-blue-950 p-4 rounded text-left">
+            <div className="flex items-start gap-3">
+              <AlertCircle className="h-5 w-5 text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5" />
+              <div className="space-y-2">
+                <p className="text-sm font-semibold text-blue-900 dark:text-blue-100">
+                  Privacy Notice: Transcription Service
+                </p>
+                <div className="text-xs text-blue-800 dark:text-blue-200 space-y-1">
+                  <p>
+                    When you click "Transcribe Audio", your audio file will be sent to <strong>Deepgram's API</strong> for speech-to-text processing.
+                  </p>
+                  <p>
+                    <strong>Important:</strong> Deepgram processes the audio and immediately returns the transcript. 
+                    No audio or transcript data is stored on Deepgram's servers after processing completes.
+                  </p>
+                  <p className="text-blue-700 dark:text-blue-300 font-medium">
+                    The transcript will be stored locally in your browser only.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+          
           <Button onClick={handleTranscribe} disabled={isTranscribing}>
             {isTranscribing ? (
               <>

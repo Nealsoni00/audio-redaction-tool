@@ -3,7 +3,7 @@
 import { useCallback, useRef, useEffect, useState, useMemo } from 'react';
 import { useStore } from '@/lib/store';
 import { Button } from '@/components/ui/button';
-import { Play, Pause, Trash2, ZoomIn, ZoomOut, Download, Volume2, VolumeX } from 'lucide-react';
+import { Play, Pause, Trash2, ZoomIn, ZoomOut, Download, Volume2, VolumeX, FileDown, X } from 'lucide-react';
 import { Separator } from '@/components/ui/separator';
 
 export function Timeline() {
@@ -26,6 +26,8 @@ export function Timeline() {
   const [dragPreview, setDragPreview] = useState<{ time: number; duration: number; itemId?: string } | null>(null);
   const dragUpdateRef = useRef<number | null>(null);
   const hasInitializedZoom = useRef(false);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; itemId: string } | null>(null);
+  const dragOffsetRef = useRef<number>(0); // Store offset from where user grabbed the item
 
   // Calculate total timeline duration (with padding for infinite timeline)
   const maxItemEnd = useMemo(() => {
@@ -48,12 +50,12 @@ export function Timeline() {
     if (!hasInitializedZoom.current && timelineRef.current && timelineItems.length > 0) {
       const containerWidth = timelineRef.current.clientWidth;
       if (containerWidth > 0) {
-        // Calculate zoom to fit content with some margin (use 80% of viewport)
-        const targetWidth = containerWidth * 0.8;
-        const adaptiveZoom = Math.floor(targetWidth / totalDuration);
-        // Clamp between 20 and 100 px/s
-        const clampedZoom = Math.max(20, Math.min(100, adaptiveZoom));
-        setZoom(clampedZoom);
+      // Calculate zoom to fit content with some margin (use 80% of viewport)
+      const targetWidth = containerWidth * 0.8;
+      const adaptiveZoom = Math.floor(targetWidth / totalDuration);
+      // Clamp between 5 and 100 px/s
+      const clampedZoom = Math.max(5, Math.min(100, adaptiveZoom));
+      setZoom(clampedZoom);
         hasInitializedZoom.current = true;
       }
     }
@@ -75,6 +77,7 @@ export function Timeline() {
     const clientX = e.clientX;
     const hasMediaDuration = e.dataTransfer.types.includes('mediaduration');
     const mediaDuration = hasMediaDuration ? parseFloat(e.dataTransfer.getData('mediaDuration') || '0') : 0;
+    const hasTimelineItem = e.dataTransfer.types.includes('timelineitemid');
 
     // Throttle drag preview updates using requestAnimationFrame
     dragUpdateRef.current = requestAnimationFrame(() => {
@@ -85,17 +88,28 @@ export function Timeline() {
       const clickX = clientX - rect.left;
       const scrollLeft = currentTarget.scrollLeft;
       const totalX = clickX + scrollLeft;
-      const newStartTime = Math.max(0, totalX / zoom);
+      
+      // Calculate position accounting for where user grabbed the item
+      const mouseTimePx = totalX - dragOffsetRef.current;
+      const newStartTime = Math.max(0, mouseTimePx / zoom);
 
-      // Update the preview position if we're currently dragging
+      // Always update the preview position
       setDragPreview(prev => {
+        // If we're already dragging something, update its position
         if (prev) {
           return { ...prev, time: newStartTime };
         }
 
-        // Check if we're dragging a new media file
+        // New media file from library
         if (mediaDuration > 0) {
-          return { time: newStartTime, duration: mediaDuration };
+          dragOffsetRef.current = 0; // No offset for new files
+          const directTime = Math.max(0, totalX / zoom);
+          return { time: directTime, duration: mediaDuration };
+        }
+
+        // Timeline item being dragged (should have been set in dragStart)
+        if (hasTimelineItem) {
+          return { time: newStartTime, duration: 0 };
         }
 
         return null;
@@ -109,7 +123,7 @@ export function Timeline() {
       e.preventDefault();
       e.stopPropagation();
       const delta = e.deltaY;
-      setZoom((prev) => Math.max(20, Math.min(500, prev - delta * 0.1)));
+      setZoom((prev) => Math.max(5, Math.min(500, prev - delta * 0.1)));
     }
     // Otherwise allow normal scrolling (horizontal/vertical)
   }, []);
@@ -119,7 +133,7 @@ export function Timeline() {
   };
 
   const handleZoomOut = () => {
-    setZoom((prev) => Math.max(20, prev - 20));
+    setZoom((prev) => Math.max(5, prev - 20));
   };
 
   const togglePlayback = () => {
@@ -165,11 +179,19 @@ export function Timeline() {
 
       // Set initial drag preview with the item's duration
       const item = timelineItems.find(i => i.id === itemId);
-      if (item) {
+      if (item && timelineRef.current) {
+        // Calculate where the mouse grabbed the item (offset from item start)
+        const rect = timelineRef.current.getBoundingClientRect();
+        const clickX = e.clientX - rect.left;
+        const scrollLeft = timelineRef.current.scrollLeft;
+        const totalX = clickX + scrollLeft;
+        const itemStartPx = item.startTime * zoom;
+        dragOffsetRef.current = totalX - itemStartPx; // Store offset where user grabbed
+        
         setDragPreview({ time: item.startTime, duration: item.duration, itemId });
       }
     },
-    [timelineItems]
+    [timelineItems, zoom]
   );
 
   const handleTimelineDrop = useCallback(
@@ -190,7 +212,15 @@ export function Timeline() {
       const clickX = e.clientX - rect.left;
       const scrollLeft = (e.currentTarget as HTMLElement).scrollLeft;
       const totalX = clickX + scrollLeft;
-      const newStartTime = Math.max(0, totalX / zoom);
+      
+      // Calculate position with drag offset
+      const mouseTimePx = totalX - dragOffsetRef.current;
+      let newStartTime = Math.max(0, mouseTimePx / zoom);
+      
+      // If timeline is empty and we're adding a new file, snap to 0
+      if (mediaId && timelineItems.length === 0) {
+        newStartTime = 0;
+      }
 
       if (mediaId) {
         // Dropping from media library - add at the drop position
@@ -200,15 +230,16 @@ export function Timeline() {
           await updateTimelineItem(newItemId, { startTime: newStartTime });
         }
       } else if (timelineItemId) {
-        // Moving a timeline item
+        // Moving a timeline item - use offset position
         const { updateTimelineItem } = useStore.getState();
         await updateTimelineItem(timelineItemId, { startTime: newStartTime });
       }
 
-      // Clear drag preview
+      // Clear drag preview and reset offset
       setDragPreview(null);
+      dragOffsetRef.current = 0;
     },
-    [addToTimeline, zoom]
+    [addToTimeline, zoom, timelineItems.length]
   );
 
   const handleDragLeave = useCallback(() => {
@@ -218,6 +249,7 @@ export function Timeline() {
       dragUpdateRef.current = null;
     }
     setDragPreview(null);
+    dragOffsetRef.current = 0;
   }, []);
 
   const handleTimelineClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
