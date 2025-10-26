@@ -274,6 +274,17 @@ export function AudioEditor({ timelineItemId }: AudioEditorProps) {
 
     // Listen for region creation
     regions.on('region-created', (region) => {
+      // Clear any existing purple selection regions before setting the new one
+      regions.getRegions().forEach((r) => {
+        if (r !== region) {
+          const color = r.color || '';
+          // Remove purple selection regions (not red/orange muted regions)
+          if (color.includes('124, 58, 237')) {
+            r.remove();
+          }
+        }
+      });
+      
       setSelectedRegion({ start: region.start, end: region.end });
     });
 
