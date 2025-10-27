@@ -491,16 +491,16 @@ export function AudioEditor({ timelineItemId }: AudioEditorProps) {
     }
   }, [timelineItem?.clips?.length, isReady, timelineItem, renderClips]);
 
-  // Sync playback state - handle play/pause
+  // Sync playback state - handle play/pause (only when wavesurfer is ready)
   useEffect(() => {
-    if (!wavesurferRef.current) return;
+    if (!wavesurferRef.current || !isReady) return;
 
     if (playbackState.isPlaying) {
       wavesurferRef.current.play();
     } else {
       wavesurferRef.current.pause();
     }
-  }, [playbackState.isPlaying]);
+  }, [playbackState.isPlaying, isReady]);
 
   // Sync playback position - convert master timeline position to local file position
   // Only sync when NOT playing to avoid interfering with normal playback

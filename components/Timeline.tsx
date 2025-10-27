@@ -46,6 +46,14 @@ export function Timeline() {
     return maxItemEnd + padding;
   }, [maxItemEnd, timelineItems.length]);
 
+  // Auto-select first timeline item when items are added
+  useEffect(() => {
+    // If timeline has items but nothing is selected, select the first one
+    if (timelineItems.length > 0 && !selectedTimelineItemId) {
+      selectTimelineItem(timelineItems[0].id);
+    }
+  }, [timelineItems.length, selectedTimelineItemId, selectTimelineItem, timelineItems]);
+
   // Auto-adjust zoom to fit content in viewport on first load
   useEffect(() => {
     if (!hasInitializedZoom.current && timelineRef.current && timelineItems.length > 0) {
@@ -139,13 +147,15 @@ export function Timeline() {
 
   const togglePlayback = () => {
     if (wavesurferInstance) {
+      // Individual file is selected, toggle its playback
       wavesurferInstance.playPause();
-    } else if (timelineItems.length > 0) {
-      // If no file selected but timeline has items, select the first one
-      const firstItem = timelineItems[0];
-      selectTimelineItem(firstItem.id);
-      // The play will happen automatically once the AudioEditor loads
-      setPlaybackState({ isPlaying: true, currentTime: 0 });
+    } else if (timelineItems.length > 0 && !selectedTimelineItemId) {
+      // No file selected but timeline has items, select the first one and start playing
+      selectTimelineItem(timelineItems[0].id);
+      setPlaybackState({ isPlaying: true });
+    } else if (selectedTimelineItemId && !wavesurferInstance) {
+      // File is selected but wavesurfer isn't ready yet, just toggle the state
+      setPlaybackState({ isPlaying: !playbackState.isPlaying });
     } else {
       // No items in timeline, just toggle state
       setPlaybackState({ isPlaying: !playbackState.isPlaying });

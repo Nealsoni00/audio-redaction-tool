@@ -46,8 +46,30 @@ export default function Home() {
     const handleKeyPress = (e: KeyboardEvent) => {
       if (e.code === 'Space' && e.target === document.body) {
         e.preventDefault();
-        const { playbackState, setPlaybackState } = useStore.getState();
-        setPlaybackState({ isPlaying: !playbackState.isPlaying });
+        const { 
+          playbackState, 
+          setPlaybackState, 
+          wavesurferInstance, 
+          timelineItems, 
+          selectedTimelineItemId,
+          selectTimelineItem 
+        } = useStore.getState();
+        
+        // Use same logic as Timeline's togglePlayback
+        if (wavesurferInstance) {
+          // Individual file is selected, toggle its playback
+          wavesurferInstance.playPause();
+        } else if (timelineItems.length > 0 && !selectedTimelineItemId) {
+          // No file selected but timeline has items, select the first one and start playing
+          selectTimelineItem(timelineItems[0].id);
+          setPlaybackState({ isPlaying: true });
+        } else if (selectedTimelineItemId && !wavesurferInstance) {
+          // File is selected but wavesurfer isn't ready yet, just toggle the state
+          setPlaybackState({ isPlaying: !playbackState.isPlaying });
+        } else {
+          // No items in timeline, just toggle state
+          setPlaybackState({ isPlaying: !playbackState.isPlaying });
+        }
       }
     };
 
