@@ -3,9 +3,10 @@
 import { useCallback, useRef, useEffect, useState, useMemo } from 'react';
 import { useStore } from '@/lib/store';
 import { Button } from '@/components/ui/button';
-import { Play, Pause, Trash2, ZoomIn, ZoomOut, Download, Volume2, VolumeX, FileDown, X } from 'lucide-react';
+import { Play, Pause, Trash2, ZoomIn, ZoomOut, Download, Volume2, VolumeX, FileDown, X, Database } from 'lucide-react';
 import { Separator } from '@/components/ui/separator';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { db } from '@/lib/db';
 
 export function Timeline() {
   const {
@@ -150,6 +151,22 @@ export function Timeline() {
     setZoom((prev) => Math.max(5, prev - 20));
   };
 
+  const handleClearTimeline = async () => {
+    if (confirm('Clear all timeline items? This will remove all items from the timeline and database.')) {
+      try {
+        // Clear from database
+        await db.timelineItems.clear();
+        // Clear from store
+        const { loadMediaFiles } = useStore.getState();
+        await loadMediaFiles();
+        console.log('Timeline cleared successfully');
+      } catch (error) {
+        console.error('Failed to clear timeline:', error);
+        alert('Failed to clear timeline. Check console for details.');
+      }
+    }
+  };
+
   const togglePlayback = () => {
     if (wavesurferInstance) {
       // Individual file is selected, toggle its playback
@@ -224,17 +241,38 @@ export function Timeline() {
       const timelineItemId = e.dataTransfer.getData('timelineItemId');
       const mediaId = e.dataTransfer.getData('mediaId');
 
+      // Capture whether timeline was empty BEFORE adding - read directly from store
+      const currentItems = useStore.getState().timelineItems;
+      const wasEmpty = currentItems.length === 0;
+
+      console.log('Timeline state before drop:', {
+        itemCount: currentItems.length,
+        items: currentItems,
+        wasEmpty
+      });
+
       const rect = e.currentTarget.getBoundingClientRect();
       const clickX = e.clientX - rect.left;
       const scrollLeft = (e.currentTarget as HTMLElement).scrollLeft;
       const totalX = clickX + scrollLeft;
-      
+
       // Calculate position with drag offset
       const mouseTimePx = totalX - dragOffsetRef.current;
       let newStartTime = Math.max(0, mouseTimePx / zoom);
-      
-      // If timeline is empty and we're adding a new file, snap to 0
-      if (mediaId && timelineItems.length === 0) {
+
+      console.log('Drop Debug:', {
+        wasEmpty,
+        mediaId,
+        dragOffset: dragOffsetRef.current,
+        totalX,
+        mouseTimePx,
+        zoom,
+        calculatedStartTime: newStartTime
+      });
+
+      // If timeline was empty and we're adding a new file, snap to 0
+      if (mediaId && wasEmpty) {
+        console.log('Snapping to 0 because timeline was empty');
         newStartTime = 0;
       }
 
@@ -255,7 +293,7 @@ export function Timeline() {
       setDragPreview(null);
       dragOffsetRef.current = 0;
     },
-    [addToTimeline, zoom, timelineItems.length]
+    [addToTimeline, zoom]
   );
 
   const handleDragLeave = useCallback(() => {
@@ -524,6 +562,23 @@ export function Timeline() {
 
           {/* Zoom Controls */}
           <div className="flex items-center gap-2 will-change-auto">
+            {/* Debug Button - Clear Timeline */}
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  size="icon"
+                  variant="destructive"
+                  onClick={handleClearTimeline}
+                  className="mr-4"
+                >
+                  <Database className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                Clear all timeline items (Debug)
+              </TooltipContent>
+            </Tooltip>
+
             <span className="text-xs text-muted-foreground">Zoom:</span>
             <Tooltip>
               <TooltipTrigger asChild>
