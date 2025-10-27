@@ -6,6 +6,17 @@ import { Button } from '@/components/ui/button';
 import { Play, Pause, Trash2, ZoomIn, ZoomOut, Download, Volume2, VolumeX, FileDown, X, Database } from 'lucide-react';
 import { Separator } from '@/components/ui/separator';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 import { db } from '@/lib/db';
 
 export function Timeline() {
@@ -152,18 +163,16 @@ export function Timeline() {
   };
 
   const handleClearTimeline = async () => {
-    if (confirm('Clear all timeline items? This will remove all items from the timeline and database.')) {
-      try {
-        // Clear from database
-        await db.timelineItems.clear();
-        // Clear from store
-        const { loadMediaFiles } = useStore.getState();
-        await loadMediaFiles();
-        console.log('Timeline cleared successfully');
-      } catch (error) {
-        console.error('Failed to clear timeline:', error);
-        alert('Failed to clear timeline. Check console for details.');
-      }
+    try {
+      // Clear from database
+      await db.timelineItems.clear();
+      // Clear from store
+      const { loadMediaFiles } = useStore.getState();
+      await loadMediaFiles();
+      console.log('Timeline cleared successfully');
+    } catch (error) {
+      console.error('Failed to clear timeline:', error);
+      alert('Failed to clear timeline. Check console for details.');
     }
   };
 
@@ -242,14 +251,7 @@ export function Timeline() {
       const mediaId = e.dataTransfer.getData('mediaId');
 
       // Capture whether timeline was empty BEFORE adding - read directly from store
-      const currentItems = useStore.getState().timelineItems;
-      const wasEmpty = currentItems.length === 0;
-
-      console.log('Timeline state before drop:', {
-        itemCount: currentItems.length,
-        items: currentItems,
-        wasEmpty
-      });
+      const wasEmpty = useStore.getState().timelineItems.length === 0;
 
       const rect = e.currentTarget.getBoundingClientRect();
       const clickX = e.clientX - rect.left;
@@ -260,19 +262,8 @@ export function Timeline() {
       const mouseTimePx = totalX - dragOffsetRef.current;
       let newStartTime = Math.max(0, mouseTimePx / zoom);
 
-      console.log('Drop Debug:', {
-        wasEmpty,
-        mediaId,
-        dragOffset: dragOffsetRef.current,
-        totalX,
-        mouseTimePx,
-        zoom,
-        calculatedStartTime: newStartTime
-      });
-
       // If timeline was empty and we're adding a new file, snap to 0
       if (mediaId && wasEmpty) {
-        console.log('Snapping to 0 because timeline was empty');
         newStartTime = 0;
       }
 
@@ -563,21 +554,41 @@ export function Timeline() {
           {/* Zoom Controls */}
           <div className="flex items-center gap-2 will-change-auto">
             {/* Debug Button - Clear Timeline */}
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  size="icon"
-                  variant="destructive"
-                  onClick={handleClearTimeline}
-                  className="mr-4"
-                >
-                  <Database className="h-4 w-4" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>
-                Clear all timeline items (Debug)
-              </TooltipContent>
-            </Tooltip>
+            <AlertDialog>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <AlertDialogTrigger asChild>
+                    <Button
+                      size="icon"
+                      variant="destructive"
+                      className="mr-4"
+                    >
+                      <Database className="h-4 w-4" />
+                    </Button>
+                  </AlertDialogTrigger>
+                </TooltipTrigger>
+                <TooltipContent>
+                  Clear all timeline items (Debug)
+                </TooltipContent>
+              </Tooltip>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Clear Timeline?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    This will remove all items from the timeline and database. This action cannot be undone.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction
+                    onClick={handleClearTimeline}
+                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                  >
+                    Clear Timeline
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
 
             <span className="text-xs text-muted-foreground">Zoom:</span>
             <Tooltip>

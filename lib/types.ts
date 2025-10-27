@@ -31,12 +31,14 @@ export interface TranscriptWord {
   start: number;
   end: number;
   confidence: number;
+  speaker?: number; // Speaker ID from diarization
 }
 
 export interface TranscriptSegment {
   words: TranscriptWord[];
   start: number;
   end: number;
+  speaker?: number; // Primary speaker for this segment
 }
 
 export interface Transcript {

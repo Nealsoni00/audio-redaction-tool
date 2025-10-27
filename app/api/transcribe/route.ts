@@ -179,7 +179,7 @@ export async function POST(request: NextRequest) {
       punctuate: true,
       paragraphs: false,
       utterances: false,
-      diarize: false,
+      diarize: true, // Enable speaker diarization
       language: 'en',
     });
 
@@ -199,11 +199,12 @@ export async function POST(request: NextRequest) {
     // Process the transcript into our format
     const words = result.results?.channels[0]?.alternatives[0]?.words || [];
 
-    // Group words into segments based on 1-second gaps
+    // Group words into segments based on speaker changes or 1-second gaps
     const segments: Array<{
-      words: Array<{ word: string; start: number; end: number; confidence: number }>;
+      words: Array<{ word: string; start: number; end: number; confidence: number; speaker?: number }>;
       start: number;
       end: number;
+      speaker?: number;
     }> = [];
 
     let currentSegment: typeof segments[0] | null = null;
@@ -216,6 +217,7 @@ export async function POST(request: NextRequest) {
         start: word.start,
         end: word.end,
         confidence: word.confidence || 0,
+        speaker: word.speaker,
       };
 
       if (!currentSegment) {
@@ -223,16 +225,22 @@ export async function POST(request: NextRequest) {
           words: [wordData],
           start: word.start,
           end: word.end,
+          speaker: word.speaker,
         };
       } else {
-        // Check if there's more than 1 second gap
+        // Check if there's a speaker change OR more than 1 second gap
         const gap = word.start - currentSegment.end;
-        if (gap > 1.0) {
+        const speakerChanged = word.speaker !== undefined &&
+                               currentSegment.speaker !== undefined &&
+                               word.speaker !== currentSegment.speaker;
+
+        if (speakerChanged || gap > 1.0) {
           segments.push(currentSegment);
           currentSegment = {
             words: [wordData],
             start: word.start,
             end: word.end,
+            speaker: word.speaker,
           };
         } else {
           currentSegment.words.push(wordData);

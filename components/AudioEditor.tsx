@@ -644,7 +644,7 @@ export function AudioEditor({ timelineItemId }: AudioEditorProps) {
     setWaveformZoom((prev) => Math.max(10, prev - 10));
   };
 
-  const handleWaveformWheel = useCallback((e: React.WheelEvent) => {
+  const handleWaveformWheel = useCallback((e: WheelEvent) => {
     if (e.ctrlKey || e.metaKey) {
       e.preventDefault();
       e.stopPropagation();
@@ -653,6 +653,18 @@ export function AudioEditor({ timelineItemId }: AudioEditorProps) {
     }
     // Otherwise allow normal scrolling (horizontal)
   }, []);
+
+  // Attach wheel event listener with passive: false to allow preventDefault
+  useEffect(() => {
+    const container = waveformContainerRef.current;
+    if (!container) return;
+
+    container.addEventListener('wheel', handleWaveformWheel, { passive: false });
+
+    return () => {
+      container.removeEventListener('wheel', handleWaveformWheel);
+    };
+  }, [handleWaveformWheel]);
 
   // Handle clicking on waveform to select a muted clip
   const handleWaveformClick = useCallback((e: React.MouseEvent) => {
@@ -874,7 +886,6 @@ export function AudioEditor({ timelineItemId }: AudioEditorProps) {
       <div
         ref={waveformContainerRef}
         className="p-4 flex-shrink-0 overflow-x-auto overflow-y-hidden max-w-full cursor-pointer"
-        onWheel={handleWaveformWheel}
         onClick={handleWaveformClick}
         style={{ width: '100%' }}
       >
