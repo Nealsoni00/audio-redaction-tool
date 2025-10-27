@@ -885,11 +885,63 @@ export function AudioEditor({ timelineItemId }: AudioEditorProps) {
       {/* Waveform */}
       <div
         ref={waveformContainerRef}
-        className="p-4 flex-shrink-0 overflow-x-auto overflow-y-hidden max-w-full cursor-pointer"
-        onClick={handleWaveformClick}
+        className="flex-shrink-0 overflow-x-auto overflow-y-hidden max-w-full"
         style={{ width: '100%' }}
       >
-        <div ref={waveformRef} />
+        <div className="relative">
+          {/* Time ruler */}
+          {mediaFile && (
+            <div className="h-6 border-b relative bg-muted/30 px-4" style={{ width: `${mediaFile.duration * waveformZoom}px`, minWidth: '100%' }}>
+              {(() => {
+                // Calculate the actual rendered width (accounting for minWidth: 100%)
+                const naturalWidth = mediaFile.duration * waveformZoom;
+                const containerWidth = waveformContainerRef.current?.clientWidth || naturalWidth;
+                const actualWidth = Math.max(naturalWidth, containerWidth);
+
+                // Calculate the effective zoom (pixels per second) based on actual width
+                const effectiveZoom = actualWidth / mediaFile.duration;
+
+                // Calculate optimal interval based on effective zoom level to maintain ~100-150px between markers
+                const targetSpacing = 120; // pixels between markers (increased for better readability)
+                const secondsPerPixel = 1 / effectiveZoom;
+
+                // Use smarter rounding - snap to nice intervals: 1, 2, 5, 10, 15, 30, 60, etc.
+                const rawInterval = targetSpacing * secondsPerPixel;
+                let optimalInterval;
+                if (rawInterval <= 1) optimalInterval = 1;
+                else if (rawInterval <= 2) optimalInterval = 2;
+                else if (rawInterval <= 5) optimalInterval = 5;
+                else if (rawInterval <= 10) optimalInterval = 10;
+                else if (rawInterval <= 15) optimalInterval = 15;
+                else if (rawInterval <= 30) optimalInterval = 30;
+                else if (rawInterval <= 60) optimalInterval = 60;
+                else optimalInterval = Math.ceil(rawInterval / 60) * 60; // Round up to next minute
+
+                return Array.from({ length: Math.ceil(mediaFile.duration / optimalInterval) + 1 }).map((_, i) => {
+                  const seconds = i * optimalInterval;
+                  if (seconds > mediaFile.duration) return null;
+
+                  return (
+                    <div
+                      key={seconds}
+                      className="absolute border-l border-border h-full"
+                      style={{ left: `${seconds * effectiveZoom + 16}px` }}
+                    >
+                      <div className="absolute top-0 left-1 text-[10px] text-muted-foreground font-mono tabular-nums whitespace-nowrap">
+                        {formatTime(seconds)}
+                      </div>
+                    </div>
+                  );
+                });
+              })()}
+            </div>
+          )}
+
+          {/* Waveform container */}
+          <div className="p-4 cursor-pointer" onClick={handleWaveformClick}>
+            <div ref={waveformRef} />
+          </div>
+        </div>
       </div>
 
       <Separator className="flex-shrink-0" />
