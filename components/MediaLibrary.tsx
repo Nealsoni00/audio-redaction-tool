@@ -92,21 +92,22 @@ export function MediaLibrary() {
             <p className="text-xs mt-1">or use the button above</p>
           </div>
         ) : (
-          <div className="space-y-4">
-            {mediaFiles.map((media) => {
+          <div>
+            {mediaFiles.map((media, index) => {
               const timelineCount = timelineItems.filter(item => item.mediaId === media.id).length;
               const isInTimeline = timelineCount > 0;
               
               return (
-                <ContextMenu key={media.id}>
-                  <ContextMenuTrigger>
-                    <div
-                      className={`p-4 border rounded-lg hover:bg-accent cursor-move transition-colors ${
-                        isInTimeline ? 'border-primary/50 bg-primary/5' : ''
-                      }`}
-                      draggable
-                      onDragStart={(e) => handleMediaDragStart(e, media.id)}
-                    >
+                <div key={media.id} className="mb-4 last:mb-0">
+                  <ContextMenu>
+                    <ContextMenuTrigger>
+                      <div
+                        className={`p-4 border rounded-lg hover:bg-accent cursor-move transition-colors ${
+                          isInTimeline ? 'border-primary/50 bg-primary/5' : ''
+                        }`}
+                        draggable
+                        onDragStart={(e) => handleMediaDragStart(e, media.id)}
+                      >
                       <div className="flex items-start justify-between gap-3">
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 mb-2">
@@ -144,7 +145,8 @@ export function MediaLibrary() {
                       Delete
                     </ContextMenuItem>
                   </ContextMenuContent>
-                </ContextMenu>
+                  </ContextMenu>
+                </div>
               );
             })}
           </div>

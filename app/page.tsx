@@ -172,6 +172,7 @@ export default function Home() {
         <div
           className="flex-shrink-0"
           style={{ width: `${leftPanelWidth}px` }}
+          suppressHydrationWarning
         >
           <MediaLibrary />
         </div>
@@ -185,6 +186,7 @@ export default function Home() {
           <div
             className="overflow-hidden"
             style={{ height: `${timelinePanelHeight}px` }}
+            suppressHydrationWarning
           >
             <Timeline />
           </div>

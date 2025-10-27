@@ -54,7 +54,7 @@ export function ResizableDivider({ direction, onResize, className = '' }: Resiza
       onMouseDownCapture={handleMouseDown}
       style={{
         touchAction: 'none',
-        zIndex: 100,
+        zIndex: 10,
         position: 'relative',
       }}
     >
@@ -65,7 +65,6 @@ export function ResizableDivider({ direction, onResize, className = '' }: Resiza
             ? '-top-1 -bottom-1'
             : '-left-1 -right-1'
         }`}
-        style={{ zIndex: 101 }}
       />
       {/* Visual indicator on hover */}
       <div
@@ -74,7 +73,6 @@ export function ResizableDivider({ direction, onResize, className = '' }: Resiza
             ? 'left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-16 h-1 group-hover:h-1.5'
             : 'left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 h-16 w-1 group-hover:w-1.5'
         } bg-primary rounded-full opacity-0 group-hover:opacity-100 transition-all pointer-events-none`}
-        style={{ zIndex: 102 }}
       />
     </div>
   );

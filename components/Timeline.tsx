@@ -274,6 +274,13 @@ export function Timeline() {
     setPlaybackState({ duration: maxItemEnd });
   }, [maxItemEnd, setPlaybackState]);
 
+  // Auto-select first timeline item when media is added to empty timeline
+  useEffect(() => {
+    if (timelineItems.length > 0 && !selectedTimelineItemId) {
+      selectTimelineItem(timelineItems[0].id);
+    }
+  }, [timelineItems.length, selectedTimelineItemId, selectTimelineItem, timelineItems]);
+
   const handleExport = async () => {
     if (timelineItems.length === 0) return;
 
