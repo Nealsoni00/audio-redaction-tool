@@ -350,19 +350,23 @@ export function TranscriptView({ timelineItemId }: TranscriptViewProps) {
   };
 
   return (
-    <div className="flex flex-col h-full" onMouseUp={handleMouseUp}>
+    <div className="flex flex-col h-full relative" onMouseUp={handleMouseUp}>
       {/* Sticky header */}
       <div className="p-4 border-b bg-background sticky top-0 z-10">
         <h4 className="text-sm font-semibold mb-2">Transcript</h4>
         <p className="text-xs text-muted-foreground">
           Click and drag to select multiple words, then redact them at once. Single-click to toggle individual words.
         </p>
-        {selectedWords.length > 0 && (
-          <div className="mt-2 flex items-center gap-2 p-2 bg-primary/10 rounded border border-primary">
-            <span className="text-xs font-medium">
+      </div>
+
+      {/* Floating selection action bar - absolutely positioned, overlays on top */}
+      {selectedWords.length > 0 && (
+        <div className="absolute top-[85px] left-4 right-4 z-20 animate-in slide-in-from-top-2 duration-200 pointer-events-none">
+          <div className="flex items-center gap-2 p-2 bg-primary/95 backdrop-blur-sm rounded-lg border border-primary shadow-lg pointer-events-auto">
+            <span className="text-xs font-medium text-primary-foreground">
               {selectedWords.length} word{selectedWords.length !== 1 ? 's' : ''} selected
             </span>
-            <Button onClick={handleBulkRedact} size="sm" variant="default">
+            <Button onClick={handleBulkRedact} size="sm" variant="secondary">
               {areAllSelectedWordsMuted() ? (
                 <>
                   <Volume2 className="mr-2 h-3 w-3" />
@@ -375,15 +379,15 @@ export function TranscriptView({ timelineItemId }: TranscriptViewProps) {
                 </>
               )}
             </Button>
-            <Button onClick={handleClearSelection} size="sm" variant="ghost">
+            <Button onClick={handleClearSelection} size="sm" variant="ghost" className="text-primary-foreground hover:bg-primary-foreground/20">
               Clear
             </Button>
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
-      {/* Scrollable transcript content */}
-      <div ref={containerRef} className="flex-1 overflow-y-auto p-4 space-y-4" style={{ userSelect: 'none' }}>
+      {/* Scrollable transcript content - with top padding to prevent content from being hidden under floating bar */}
+      <div ref={containerRef} className="flex-1 overflow-y-auto p-4 pt-16 space-y-4" style={{ userSelect: 'none' }}>
         {timelineItem.transcript.segments.map((segment, segmentIndex) => (
           <div
             key={segmentIndex}
