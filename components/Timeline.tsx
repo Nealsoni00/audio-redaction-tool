@@ -106,25 +106,30 @@ export function Timeline() {
       setDragPreview(prev => {
         // If we're already dragging something, update its position
         if (prev) {
-          return { ...prev, time: newStartTime };
+          // If timeline is empty, snap to 0:00
+          const finalTime = timelineItems.length === 0 ? 0 : newStartTime;
+          return { ...prev, time: finalTime };
         }
 
         // New media file from library
         if (mediaDuration > 0) {
           dragOffsetRef.current = 0; // No offset for new files
-          const directTime = Math.max(0, totalX / zoom);
+          // If timeline is empty, snap to 0:00
+          const directTime = timelineItems.length === 0 ? 0 : Math.max(0, totalX / zoom);
           return { time: directTime, duration: mediaDuration };
         }
 
         // Timeline item being dragged (should have been set in dragStart)
         if (hasTimelineItem) {
-          return { time: newStartTime, duration: 0 };
+          // If timeline is empty, snap to 0:00
+          const finalTime = timelineItems.length === 0 ? 0 : newStartTime;
+          return { time: finalTime, duration: 0 };
         }
 
         return null;
       });
     });
-  }, [zoom]);
+  }, [zoom, timelineItems.length]);
 
   const handleWheel = useCallback((e: React.WheelEvent) => {
     // Check if it's a pinch-to-zoom gesture (two-finger scroll on trackpad)
