@@ -33,26 +33,97 @@ export function TranscriptView({ timelineItemId }: TranscriptViewProps) {
     setError(null);
 
     try {
-      const formData = new FormData();
-      formData.append('audio', mediaFile.file);
+      // Get Deepgram API key from our backend
+      const keyResponse = await fetch('/api/deepgram-key');
+      const keyData = await keyResponse.json();
 
-      const response = await fetch('/api/transcribe', {
+      if (!keyResponse.ok) {
+        throw new Error(keyData.error || 'Failed to get API key');
+      }
+
+      // Convert File to ArrayBuffer for Deepgram
+      const arrayBuffer = await mediaFile.file.arrayBuffer();
+
+      // Call Deepgram directly from the browser
+      const response = await fetch('https://api.deepgram.com/v1/listen?model=nova-2&smart_format=true&punctuate=true&diarize=true&language=en', {
         method: 'POST',
-        body: formData,
+        headers: {
+          'Authorization': `Token ${keyData.apiKey}`,
+          'Content-Type': mediaFile.file.type,
+        },
+        body: arrayBuffer,
       });
 
       const data = await response.json();
 
       if (!response.ok) {
-        const errorMsg = data.details || data.error || 'Transcription failed';
+        const errorMsg = data.err_msg || data.error || 'Transcription failed';
         throw new Error(errorMsg);
       }
 
-      if (!data.transcript) {
-        throw new Error('No transcript in response');
+      // Process the Deepgram response into our format
+      const words = data.results?.channels[0]?.alternatives[0]?.words || [];
+
+      // Group words into segments based on speaker changes or 1-second gaps
+      const segments: Array<{
+        words: Array<{ word: string; start: number; end: number; confidence: number; speaker?: number }>;
+        start: number;
+        end: number;
+        speaker?: number;
+      }> = [];
+
+      let currentSegment: typeof segments[0] | null = null;
+
+      for (const word of words) {
+        if (!word.word || word.start === undefined || word.end === undefined) continue;
+
+        const wordData = {
+          word: word.word,
+          start: word.start,
+          end: word.end,
+          confidence: word.confidence || 0,
+          speaker: word.speaker,
+        };
+
+        if (!currentSegment) {
+          currentSegment = {
+            words: [wordData],
+            start: word.start,
+            end: word.end,
+            speaker: word.speaker,
+          };
+        } else {
+          // Check if there's a speaker change OR more than 1 second gap
+          const gap = word.start - currentSegment.end;
+          const speakerChanged = word.speaker !== undefined &&
+                                 currentSegment.speaker !== undefined &&
+                                 word.speaker !== currentSegment.speaker;
+
+          if (speakerChanged || gap > 1.0) {
+            segments.push(currentSegment);
+            currentSegment = {
+              words: [wordData],
+              start: word.start,
+              end: word.end,
+              speaker: word.speaker,
+            };
+          } else {
+            currentSegment.words.push(wordData);
+            currentSegment.end = word.end;
+          }
+        }
       }
 
-      await setTranscript(timelineItemId, data.transcript);
+      if (currentSegment) {
+        segments.push(currentSegment);
+      }
+
+      const transcript = {
+        segments,
+        fullText: data.results?.channels[0]?.alternatives[0]?.transcript || '',
+      };
+
+      await setTranscript(timelineItemId, transcript);
     } catch (err) {
       console.error('Transcription error:', err);
       const errorMessage = err instanceof Error ? err.message : 'Failed to transcribe audio';
