@@ -1,0 +1,13 @@
+{
+  "functions": {
+    "app/api/transcribe/route.ts": {
+      "maxDuration": 60,
+      "memory": 1024
+    }
+  },
+  "api": {
+    "bodyParser": {
+      "sizeLimit": "30mb"
+    }
+  }
+}
