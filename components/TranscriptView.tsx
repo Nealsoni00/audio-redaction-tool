@@ -33,22 +33,22 @@ export function TranscriptView({ timelineItemId }: TranscriptViewProps) {
     setError(null);
 
     try {
-      // Get Deepgram API key from our backend
-      const keyResponse = await fetch('/api/deepgram-key');
-      const keyData = await keyResponse.json();
+      // Get temporary Deepgram token from our backend
+      const tokenResponse = await fetch('/api/deepgram-key');
+      const tokenData = await tokenResponse.json();
 
-      if (!keyResponse.ok) {
-        throw new Error(keyData.error || 'Failed to get API key');
+      if (!tokenResponse.ok) {
+        throw new Error(tokenData.error || 'Failed to get authentication token');
       }
 
       // Convert File to ArrayBuffer for Deepgram
       const arrayBuffer = await mediaFile.file.arrayBuffer();
 
-      // Call Deepgram directly from the browser
+      // Call Deepgram directly from the browser using temporary token
       const response = await fetch('https://api.deepgram.com/v1/listen?model=nova-2&smart_format=true&punctuate=true&diarize=true&language=en', {
         method: 'POST',
         headers: {
-          'Authorization': `Token ${keyData.apiKey}`,
+          'Authorization': `Bearer ${tokenData.token}`,
           'Content-Type': mediaFile.file.type,
         },
         body: arrayBuffer,
