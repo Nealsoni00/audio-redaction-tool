@@ -173,15 +173,27 @@ export async function POST(request: NextRequest) {
     console.log('Transcribing audio file:', audioFile.name, 'Size:', buffer.length);
 
     // Transcribe the audio
-    const { result, error } = await deepgram.listen.prerecorded.transcribeFile(buffer, {
-      model: 'nova-2',
-      smart_format: true,
-      punctuate: true,
-      paragraphs: false,
-      utterances: false,
-      diarize: true, // Enable speaker diarization
-      language: 'en',
-    });
+    let result, error;
+    try {
+      const response = await deepgram.listen.prerecorded.transcribeFile(buffer, {
+        model: 'nova-2',
+        smart_format: true,
+        punctuate: true,
+        paragraphs: false,
+        utterances: false,
+        diarize: true, // Enable speaker diarization
+        language: 'en',
+      });
+      result = response.result;
+      error = response.error;
+    } catch (err) {
+      console.error('Deepgram API call failed:', err);
+      return NextResponse.json({
+        error: 'Transcription API call failed',
+        details: err instanceof Error ? err.message : String(err),
+        hint: 'Check if DEEPGRAM_API_KEY is set correctly in production environment'
+      }, { status: 500 });
+    }
 
     if (error) {
       console.error('Deepgram error:', error);
