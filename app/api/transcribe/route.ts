@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@deepgram/sdk';
 
+// Next.js Route Segment Config
+export const maxDuration = 60; // Maximum function execution time (seconds)
+export const dynamic = 'force-dynamic'; // Disable static optimization
+
 // Rate limiting: Track last request timestamp per IP
 const rateLimitMap = new Map<string, number>();
 const RATE_LIMIT_WINDOW = 10000; // 10 seconds in milliseconds
