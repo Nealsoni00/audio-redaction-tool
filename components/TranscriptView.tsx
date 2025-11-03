@@ -3,9 +3,20 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { useStore } from '@/lib/store';
 import { Button } from '@/components/ui/button';
-import { Loader2, Volume2, VolumeX, AlertCircle } from 'lucide-react';
+import { Loader2, Volume2, VolumeX, AlertCircle, Sparkles } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import { TranscriptWord } from '@/lib/types';
+import { DetectionResultsPanel, getCategoryColor } from './DetectionResultsPanel';
+import { REDACTION_CATEGORIES } from '@/lib/redaction-categories';
+
+interface Detection {
+  text: string;
+  category: string;
+  startIndex: number;
+  endIndex: number;
+  start: number;
+  end: number;
+}
 
 interface TranscriptViewProps {
   timelineItemId: string;
@@ -20,6 +31,10 @@ export function TranscriptView({ timelineItemId }: TranscriptViewProps) {
   const activeWordRef = useRef<HTMLSpanElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
 
+  // Smart redaction state
+  const [detections, setDetections] = useState<Detection[]>([]);
+  const [redactedDetections, setRedactedDetections] = useState<Set<string>>(new Set());
+
   const timelineItem = timelineItems.find((item) => item.id === timelineItemId);
   const mediaFile = timelineItem ? mediaFiles.find((m) => m.id === timelineItem.mediaId) : null;
 
@@ -33,97 +48,24 @@ export function TranscriptView({ timelineItemId }: TranscriptViewProps) {
     setError(null);
 
     try {
-      // Get temporary Deepgram token from our backend
-      const tokenResponse = await fetch('/api/deepgram-key');
-      const tokenData = await tokenResponse.json();
+      // Send audio file to our server endpoint for transcription
+      const formData = new FormData();
+      formData.append('audio', mediaFile.file);
 
-      if (!tokenResponse.ok) {
-        throw new Error(tokenData.error || 'Failed to get authentication token');
-      }
-
-      // Convert File to ArrayBuffer for Deepgram
-      const arrayBuffer = await mediaFile.file.arrayBuffer();
-
-      // Call Deepgram directly from the browser using temporary token
-      const response = await fetch('https://api.deepgram.com/v1/listen?model=nova-2&smart_format=true&punctuate=true&diarize=true&language=en', {
+      const response = await fetch('/api/transcribe', {
         method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${tokenData.token}`,
-          'Content-Type': mediaFile.file.type,
-        },
-        body: arrayBuffer,
+        body: formData,
       });
 
       const data = await response.json();
 
       if (!response.ok) {
-        const errorMsg = data.err_msg || data.error || 'Transcription failed';
+        const errorMsg = data.error || data.message || 'Transcription failed';
         throw new Error(errorMsg);
       }
 
-      // Process the Deepgram response into our format
-      const words = data.results?.channels[0]?.alternatives[0]?.words || [];
-
-      // Group words into segments based on speaker changes or 1-second gaps
-      const segments: Array<{
-        words: Array<{ word: string; start: number; end: number; confidence: number; speaker?: number }>;
-        start: number;
-        end: number;
-        speaker?: number;
-      }> = [];
-
-      let currentSegment: typeof segments[0] | null = null;
-
-      for (const word of words) {
-        if (!word.word || word.start === undefined || word.end === undefined) continue;
-
-        const wordData = {
-          word: word.word,
-          start: word.start,
-          end: word.end,
-          confidence: word.confidence || 0,
-          speaker: word.speaker,
-        };
-
-        if (!currentSegment) {
-          currentSegment = {
-            words: [wordData],
-            start: word.start,
-            end: word.end,
-            speaker: word.speaker,
-          };
-        } else {
-          // Check if there's a speaker change OR more than 1 second gap
-          const gap = word.start - currentSegment.end;
-          const speakerChanged = word.speaker !== undefined &&
-                                 currentSegment.speaker !== undefined &&
-                                 word.speaker !== currentSegment.speaker;
-
-          if (speakerChanged || gap > 1.0) {
-            segments.push(currentSegment);
-            currentSegment = {
-              words: [wordData],
-              start: word.start,
-              end: word.end,
-              speaker: word.speaker,
-            };
-          } else {
-            currentSegment.words.push(wordData);
-            currentSegment.end = word.end;
-          }
-        }
-      }
-
-      if (currentSegment) {
-        segments.push(currentSegment);
-      }
-
-      const transcript = {
-        segments,
-        fullText: data.results?.channels[0]?.alternatives[0]?.transcript || '',
-      };
-
-      await setTranscript(timelineItemId, transcript);
+      // The server returns the transcript in our format
+      await setTranscript(timelineItemId, data.transcript);
     } catch (err) {
       console.error('Transcription error:', err);
       const errorMessage = err instanceof Error ? err.message : 'Failed to transcribe audio';
@@ -341,6 +283,199 @@ export function TranscriptView({ timelineItemId }: TranscriptViewProps) {
     setSelectedWords([]);
   }, [selectedWords, timelineItem, timelineItemId, removeClip, addClip, areAllSelectedWordsMuted]);
 
+  const handleDetectionsFound = useCallback((newDetections: Detection[]) => {
+    console.log('Detections found:', newDetections);
+    setDetections(newDetections);
+    setRedactedDetections(new Set()); // Clear previous redactions
+  }, []);
+
+  const handleAutoRedact = useCallback(async (detectionsToRedact: Detection[]) => {
+    if (!timelineItem || detectionsToRedact.length === 0) return;
+
+    console.log('Auto-redacting', detectionsToRedact.length, 'detections');
+
+    // Mark all as redacted in state
+    setRedactedDetections(prev => {
+      const next = new Set(prev);
+      detectionsToRedact.forEach(detection => {
+        const key = getDetectionKey(detection);
+        next.add(key);
+      });
+      return next;
+    });
+
+    // Apply redactions to audio (only if not already muted)
+    for (const detection of detectionsToRedact) {
+      const { start, end } = detection;
+
+      // Find all clips that overlap with this detection
+      const overlappingClips = timelineItem.clips.filter(
+        (clip) => (start < clip.endTime && end > clip.startTime)
+      );
+
+      // Sort by start time
+      overlappingClips.sort((a, b) => a.startTime - b.startTime);
+
+      // Process each overlapping clip
+      for (const clip of overlappingClips) {
+        // Skip if this section is already muted
+        if (clip.muted) {
+          continue;
+        }
+
+        // Remove the original clip
+        await removeClip(timelineItemId, clip.id);
+
+        const newClips = [];
+
+        // Before detection: keep unchanged
+        if (clip.startTime < start) {
+          newClips.push({
+            id: uuidv4(),
+            startTime: clip.startTime,
+            endTime: Math.min(clip.endTime, start),
+            muted: false,
+          });
+        }
+
+        // Inside detection: mute it
+        const muteStart = Math.max(clip.startTime, start);
+        const muteEnd = Math.min(clip.endTime, end);
+        if (muteStart < muteEnd) {
+          newClips.push({
+            id: uuidv4(),
+            startTime: muteStart,
+            endTime: muteEnd,
+            muted: true, // Auto-redact = mute
+          });
+        }
+
+        // After detection: keep unchanged
+        if (clip.endTime > end) {
+          newClips.push({
+            id: uuidv4(),
+            startTime: Math.max(clip.startTime, end),
+            endTime: clip.endTime,
+            muted: false,
+          });
+        }
+
+        // Add new clips
+        for (const newClip of newClips) {
+          await addClip(timelineItemId, newClip);
+        }
+      }
+    }
+
+    console.log('Auto-redaction complete');
+  }, [timelineItem, timelineItemId, removeClip, addClip]);
+
+  const getDetectionKey = (detection: Detection) => {
+    return `${detection.start}-${detection.end}-${detection.text}`;
+  };
+
+  const handleToggleRedaction = useCallback(async (detection: Detection) => {
+    if (!timelineItem) return;
+
+    const key = getDetectionKey(detection);
+    const isCurrentlyRedacted = redactedDetections.has(key);
+
+    // Update the redacted state
+    setRedactedDetections(prev => {
+      const next = new Set(prev);
+      if (isCurrentlyRedacted) {
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
+      return next;
+    });
+
+    const { start, end } = detection;
+
+    // Find all clips that overlap with this detection
+    const overlappingClips = timelineItem.clips.filter(
+      (clip) => (start < clip.endTime && end > clip.startTime)
+    );
+
+    // Sort by start time
+    overlappingClips.sort((a, b) => a.startTime - b.startTime);
+
+    // Process each overlapping clip
+    for (const clip of overlappingClips) {
+      // Remove the original clip
+      await removeClip(timelineItemId, clip.id);
+
+      const newClips = [];
+
+      // Before detection: keep unchanged
+      if (clip.startTime < start) {
+        newClips.push({
+          id: uuidv4(),
+          startTime: clip.startTime,
+          endTime: Math.min(clip.endTime, start),
+          muted: clip.muted,
+        });
+      }
+
+      // Inside detection: toggle mute
+      const muteStart = Math.max(clip.startTime, start);
+      const muteEnd = Math.min(clip.endTime, end);
+      if (muteStart < muteEnd) {
+        newClips.push({
+          id: uuidv4(),
+          startTime: muteStart,
+          endTime: muteEnd,
+          muted: !isCurrentlyRedacted, // Toggle based on current state
+        });
+      }
+
+      // After detection: keep unchanged
+      if (clip.endTime > end) {
+        newClips.push({
+          id: uuidv4(),
+          startTime: Math.max(clip.startTime, end),
+          endTime: clip.endTime,
+          muted: clip.muted,
+        });
+      }
+
+      // Add new clips
+      for (const newClip of newClips) {
+        await addClip(timelineItemId, newClip);
+      }
+    }
+  }, [timelineItem, timelineItemId, removeClip, addClip, redactedDetections]);
+
+  // Check if a word is part of a detection
+  const getWordDetection = useCallback((word: TranscriptWord): Detection | null => {
+    for (const detection of detections) {
+      // Check if word overlaps with detection time range
+      if (word.start >= detection.start && word.end <= detection.end) {
+        return detection;
+      }
+    }
+    return null;
+  }, [detections]);
+
+  // Check if a detection is redacted
+  const isDetectionRedacted = useCallback((detection: Detection | null): boolean => {
+    if (!detection) return false;
+    const key = getDetectionKey(detection);
+    return redactedDetections.has(key);
+  }, [redactedDetections]);
+
+  // Get category label from subcategory ID
+  const getCategoryLabel = (subcategoryId: string): string => {
+    for (const category of REDACTION_CATEGORIES) {
+      const subcategory = category.subcategories?.find(sub => sub.id === subcategoryId);
+      if (subcategory) {
+        return subcategory.label;
+      }
+    }
+    return subcategoryId;
+  };
+
   if (!timelineItem || !mediaFile) {
     return null;
   }
@@ -363,11 +498,11 @@ export function TranscriptView({ timelineItemId }: TranscriptViewProps) {
                 </p>
                 <div className="text-xs text-blue-800 dark:text-blue-200 space-y-1">
                   <p>
-                    When you click "Transcribe Audio", your audio file will be sent to <strong>Deepgram's API</strong> for speech-to-text processing.
+                    When you click "Transcribe Audio", your audio file will be sent to our server, which forwards it to <strong>Deepgram's API</strong> for speech-to-text processing.
                   </p>
                   <p>
-                    <strong>Important:</strong> Deepgram processes the audio and immediately returns the transcript. 
-                    No audio or transcript data is stored on Deepgram's servers after processing completes.
+                    <strong>Important:</strong> Deepgram processes the audio and immediately returns the transcript.
+                    No audio or transcript data is stored on our server or Deepgram's servers after processing completes.
                   </p>
                   <p className="text-blue-700 dark:text-blue-300 font-medium">
                     The transcript will be stored locally in your browser only.
@@ -421,16 +556,18 @@ export function TranscriptView({ timelineItemId }: TranscriptViewProps) {
   };
 
   return (
-    <div className="flex flex-col h-full relative" onMouseUp={handleMouseUp}>
-      {/* Sticky header */}
-      <div className="p-4 border-b bg-background sticky top-0 z-10">
-        <h4 className="text-sm font-semibold mb-2">Transcript</h4>
-        <p className="text-xs text-muted-foreground">
-          Click and drag to select multiple words, then redact them at once. Single-click to toggle individual words.
-        </p>
-      </div>
+    <div className="flex h-full" onMouseUp={handleMouseUp}>
+      {/* Left side: Transcript */}
+      <div className="flex-1 flex flex-col relative">
+        {/* Sticky header */}
+        <div className="p-4 border-b bg-background sticky top-0 z-10">
+          <h4 className="text-sm font-semibold mb-2">Transcript</h4>
+          <p className="text-xs text-muted-foreground">
+            Click and drag to select multiple words, then redact them at once. Single-click to toggle individual words.
+          </p>
+        </div>
 
-      {/* Floating selection action bar - absolutely positioned, overlays on top */}
+        {/* Floating selection action bar - absolutely positioned, overlays on top */}
       {selectedWords.length > 0 && (
         <div className="absolute top-[85px] left-4 right-4 z-20 animate-in slide-in-from-top-2 duration-200 pointer-events-none">
           <div className="flex items-center gap-2 p-2 bg-primary/95 backdrop-blur-sm rounded-lg border border-primary shadow-lg pointer-events-auto">
@@ -479,6 +616,10 @@ export function TranscriptView({ timelineItemId }: TranscriptViewProps) {
                 const isMuted = isWordMuted(word.start, word.end);
                 const isSelected = isWordSelected(word);
                 const isActive = isWordActive(word);
+                const detection = getWordDetection(word);
+                const detectionColors = detection ? getCategoryColor(detection.category) : null;
+                const isDetectedAndRedacted = detection && isDetectionRedacted(detection);
+
                 return (
                   <span key={wordIndex} className="inline-block mr-1 group relative">
                     <span
@@ -488,6 +629,10 @@ export function TranscriptView({ timelineItemId }: TranscriptViewProps) {
                           ? 'bg-yellow-300 dark:bg-yellow-600 text-yellow-900 dark:text-yellow-100 font-bold ring-2 ring-yellow-500'
                           : isSelected
                           ? 'bg-primary text-primary-foreground'
+                          : isDetectedAndRedacted && detectionColors
+                          ? `${detectionColors.bg} ${detectionColors.text} font-medium ring-2 ${detectionColors.border} line-through opacity-60`
+                          : detection && detectionColors
+                          ? `${detectionColors.bg} ${detectionColors.text} font-medium ring-1 ${detectionColors.border}`
                           : isMuted
                           ? 'bg-destructive/20 text-destructive line-through'
                           : 'hover:bg-primary/10'
@@ -506,7 +651,12 @@ export function TranscriptView({ timelineItemId }: TranscriptViewProps) {
                     </span>
                     {!isSelecting && selectedWords.length === 0 && !isActive && (
                       <span className="absolute -top-8 left-0 hidden group-hover:flex items-center gap-1 bg-popover text-popover-foreground text-xs px-2 py-1 rounded border shadow-md whitespace-nowrap z-10">
-                        {isMuted ? (
+                        {detection ? (
+                          <>
+                            <Sparkles className="h-3 w-3" />
+                            {isDetectedAndRedacted ? 'Redacted' : 'Detected'}: {getCategoryLabel(detection.category)}
+                          </>
+                        ) : isMuted ? (
                           <>
                             <VolumeX className="h-3 w-3" />
                             Muted
@@ -525,6 +675,19 @@ export function TranscriptView({ timelineItemId }: TranscriptViewProps) {
             </div>
           </div>
         ))}
+      </div>
+      </div>
+
+      {/* Right side: Detection Results Panel */}
+      <div className="w-96">
+        <DetectionResultsPanel
+          segments={timelineItem.transcript.segments}
+          onDetectionsFound={handleDetectionsFound}
+          detections={detections}
+          redactedDetections={redactedDetections}
+          onToggleRedaction={handleToggleRedaction}
+          onAutoRedact={handleAutoRedact}
+        />
       </div>
     </div>
   );

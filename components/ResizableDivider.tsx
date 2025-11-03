@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 
 interface ResizableDividerProps {
   direction: 'horizontal' | 'vertical';
@@ -11,15 +11,47 @@ interface ResizableDividerProps {
 export function ResizableDivider({ direction, onResize, className = '' }: ResizableDividerProps) {
   const isDraggingRef = useRef(false);
   const startPosRef = useRef(0);
+  const pointerIdRef = useRef<number | null>(null);
+  const moveHandlerRef = useRef<(event: PointerEvent) => void>();
+  const upHandlerRef = useRef<(event: PointerEvent) => void>();
 
-  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+  const cleanupPointerListeners = useCallback(() => {
+    if (moveHandlerRef.current) {
+      document.removeEventListener('pointermove', moveHandlerRef.current);
+      moveHandlerRef.current = undefined;
+    }
+    if (upHandlerRef.current) {
+      document.removeEventListener('pointerup', upHandlerRef.current);
+      document.removeEventListener('pointercancel', upHandlerRef.current);
+      upHandlerRef.current = undefined;
+    }
+    pointerIdRef.current = null;
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      cleanupPointerListeners();
+    };
+  }, [cleanupPointerListeners]);
+
+  const handlePointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
     e.preventDefault();
     e.stopPropagation();
     isDraggingRef.current = true;
+    pointerIdRef.current = e.pointerId;
     startPosRef.current = direction === 'horizontal' ? e.clientY : e.clientX;
 
-    const handleMouseMove = (moveEvent: MouseEvent) => {
-      if (!isDraggingRef.current) return;
+    const target = e.currentTarget;
+    if (target.setPointerCapture) {
+      target.setPointerCapture(e.pointerId);
+    }
+
+    const handlePointerMove = (moveEvent: PointerEvent) => {
+      if (!isDraggingRef.current || moveEvent.pointerId !== pointerIdRef.current) {
+        return;
+      }
 
       const currentPos = direction === 'horizontal' ? moveEvent.clientY : moveEvent.clientX;
       const delta = currentPos - startPosRef.current;
@@ -30,19 +62,30 @@ export function ResizableDivider({ direction, onResize, className = '' }: Resiza
       }
     };
 
-    const handleMouseUp = () => {
+    const handlePointerUp = (upEvent: PointerEvent) => {
+      if (upEvent.pointerId !== pointerIdRef.current) {
+        return;
+      }
       isDraggingRef.current = false;
-      document.removeEventListener('mousemove', handleMouseMove);
-      document.removeEventListener('mouseup', handleMouseUp);
-      document.body.style.cursor = '';
-      document.body.style.userSelect = '';
+      if (target.releasePointerCapture) {
+        try {
+          target.releasePointerCapture(upEvent.pointerId);
+        } catch {
+          // Ignore if capture was already released
+        }
+      }
+      cleanupPointerListeners();
     };
 
-    document.addEventListener('mousemove', handleMouseMove);
-    document.addEventListener('mouseup', handleMouseUp);
+    moveHandlerRef.current = handlePointerMove;
+    upHandlerRef.current = handlePointerUp;
+
+    document.addEventListener('pointermove', handlePointerMove);
+    document.addEventListener('pointerup', handlePointerUp);
+    document.addEventListener('pointercancel', handlePointerUp);
     document.body.style.cursor = direction === 'horizontal' ? 'ns-resize' : 'ew-resize';
     document.body.style.userSelect = 'none';
-  }, [direction, onResize]);
+  }, [cleanupPointerListeners, direction, onResize]);
 
   return (
     <div
@@ -51,7 +94,7 @@ export function ResizableDivider({ direction, onResize, className = '' }: Resiza
           ? 'h-1.5 cursor-ns-resize hover:bg-primary/30 active:bg-primary/50'
           : 'w-1.5 cursor-ew-resize hover:bg-primary/30 active:bg-primary/50'
       } bg-border flex-shrink-0 relative group transition-colors select-none`}
-      onMouseDownCapture={handleMouseDown}
+      onPointerDown={handlePointerDown}
       style={{
         touchAction: 'none',
         zIndex: 10,
