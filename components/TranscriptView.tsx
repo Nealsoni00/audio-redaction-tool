@@ -23,7 +23,7 @@ interface TranscriptViewProps {
 }
 
 export function TranscriptView({ timelineItemId }: TranscriptViewProps) {
-  const { timelineItems, mediaFiles, setTranscript, addClip, updateClip, removeClip, playbackState } = useStore();
+  const { timelineItems, mediaFiles, setTranscript, addClip, updateClip, removeClip, batchUpdateClips, setDetections: persistDetections, playbackState } = useStore();
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedWords, setSelectedWords] = useState<TranscriptWord[]>([]);
@@ -40,6 +40,24 @@ export function TranscriptView({ timelineItemId }: TranscriptViewProps) {
 
   // Calculate current time relative to this timeline item
   const currentLocalTime = timelineItem ? playbackState.currentTime - timelineItem.startTime : 0;
+
+  // Load detections from persisted state on mount
+  useEffect(() => {
+    if (timelineItem?.detections) {
+      setDetections(timelineItem.detections);
+      if (timelineItem.redactedDetectionKeys) {
+        setRedactedDetections(new Set(timelineItem.redactedDetectionKeys));
+      }
+    }
+  }, [timelineItem?.id]); // Only run when timeline item changes
+
+  // Persist redactedDetections whenever they change
+  useEffect(() => {
+    if (detections.length > 0) {
+      const keys = Array.from(redactedDetections);
+      persistDetections(timelineItemId, detections, keys);
+    }
+  }, [redactedDetections, detections, timelineItemId, persistDetections]);
 
   const handleTranscribe = async () => {
     if (!mediaFile) return;
@@ -287,7 +305,10 @@ export function TranscriptView({ timelineItemId }: TranscriptViewProps) {
     console.log('Detections found:', newDetections);
     setDetections(newDetections);
     setRedactedDetections(new Set()); // Clear previous redactions
-  }, []);
+
+    // Persist to database
+    persistDetections(timelineItemId, newDetections, []);
+  }, [timelineItemId, persistDetections]);
 
   const handleAutoRedact = useCallback(async (detectionsToRedact: Detection[]) => {
     if (!timelineItem || detectionsToRedact.length === 0) return;
@@ -304,71 +325,113 @@ export function TranscriptView({ timelineItemId }: TranscriptViewProps) {
       return next;
     });
 
-    // Apply redactions to audio (only if not already muted)
-    for (const detection of detectionsToRedact) {
-      const { start, end } = detection;
+    // Merge overlapping time ranges to avoid processing the same region multiple times
+    const sortedDetections = [...detectionsToRedact].sort((a, b) => a.start - b.start);
+    const mergedRanges: Array<{ start: number; end: number }> = [];
 
-      // Find all clips that overlap with this detection
-      const overlappingClips = timelineItem.clips.filter(
-        (clip) => (start < clip.endTime && end > clip.startTime)
-      );
-
-      // Sort by start time
-      overlappingClips.sort((a, b) => a.startTime - b.startTime);
-
-      // Process each overlapping clip
-      for (const clip of overlappingClips) {
-        // Skip if this section is already muted
-        if (clip.muted) {
-          continue;
-        }
-
-        // Remove the original clip
-        await removeClip(timelineItemId, clip.id);
-
-        const newClips = [];
-
-        // Before detection: keep unchanged
-        if (clip.startTime < start) {
-          newClips.push({
-            id: uuidv4(),
-            startTime: clip.startTime,
-            endTime: Math.min(clip.endTime, start),
-            muted: false,
-          });
-        }
-
-        // Inside detection: mute it
-        const muteStart = Math.max(clip.startTime, start);
-        const muteEnd = Math.min(clip.endTime, end);
-        if (muteStart < muteEnd) {
-          newClips.push({
-            id: uuidv4(),
-            startTime: muteStart,
-            endTime: muteEnd,
-            muted: true, // Auto-redact = mute
-          });
-        }
-
-        // After detection: keep unchanged
-        if (clip.endTime > end) {
-          newClips.push({
-            id: uuidv4(),
-            startTime: Math.max(clip.startTime, end),
-            endTime: clip.endTime,
-            muted: false,
-          });
-        }
-
-        // Add new clips
-        for (const newClip of newClips) {
-          await addClip(timelineItemId, newClip);
+    for (const detection of sortedDetections) {
+      if (mergedRanges.length === 0) {
+        mergedRanges.push({ start: detection.start, end: detection.end });
+      } else {
+        const lastRange = mergedRanges[mergedRanges.length - 1];
+        // If this detection overlaps with or is adjacent to the last range, merge them
+        if (detection.start <= lastRange.end) {
+          lastRange.end = Math.max(lastRange.end, detection.end);
+        } else {
+          mergedRanges.push({ start: detection.start, end: detection.end });
         }
       }
     }
 
+    console.log(`Merged ${detectionsToRedact.length} detections into ${mergedRanges.length} ranges`);
+
+    // Get the current timeline item state
+    const currentTimelineItem = useStore.getState().timelineItems.find(item => item.id === timelineItemId);
+    if (!currentTimelineItem) return;
+
+    // Find all unique clips that overlap with ANY merged range (process each clip only once)
+    const processedClipIds = new Set<string>();
+    const clipsToRemove: string[] = [];
+    const clipsToAdd: any[] = [];
+
+    for (const clip of currentTimelineItem.clips) {
+      // Skip if already processed or already muted
+      if (processedClipIds.has(clip.id) || clip.muted) {
+        continue;
+      }
+
+      // Find all ranges that overlap with this clip
+      const overlappingRanges = mergedRanges.filter(
+        range => clip.startTime < range.end && clip.endTime > range.start
+      );
+
+      if (overlappingRanges.length === 0) {
+        continue; // This clip doesn't overlap with any detection
+      }
+
+      // Mark as processed
+      processedClipIds.add(clip.id);
+      clipsToRemove.push(clip.id);
+
+      // Build a list of sections for this clip (alternating unmuted/muted)
+      const sections: Array<{ start: number; end: number; muted: boolean }> = [];
+      let currentPos = clip.startTime;
+
+      // Sort overlapping ranges by start time
+      overlappingRanges.sort((a, b) => a.start - b.start);
+
+      for (const range of overlappingRanges) {
+        // Add unmuted section before this range (if any)
+        if (currentPos < range.start) {
+          sections.push({
+            start: currentPos,
+            end: Math.min(range.start, clip.endTime),
+            muted: false,
+          });
+        }
+
+        // Add muted section for this range
+        const muteStart = Math.max(currentPos, range.start);
+        const muteEnd = Math.min(range.end, clip.endTime);
+        if (muteStart < muteEnd) {
+          sections.push({
+            start: muteStart,
+            end: muteEnd,
+            muted: true,
+          });
+          currentPos = muteEnd;
+        }
+      }
+
+      // Add final unmuted section (if any)
+      if (currentPos < clip.endTime) {
+        sections.push({
+          start: currentPos,
+          end: clip.endTime,
+          muted: false,
+        });
+      }
+
+      // Convert sections to clips
+      for (const section of sections) {
+        if (section.start < section.end) {
+          clipsToAdd.push({
+            id: uuidv4(),
+            startTime: section.start,
+            endTime: section.end,
+            muted: section.muted,
+          });
+        }
+      }
+    }
+
+    console.log(`Batch operation: removing ${clipsToRemove.length} clips, adding ${clipsToAdd.length} clips`);
+
+    // Apply all operations in a single batch update (no flickering!)
+    await batchUpdateClips(timelineItemId, clipsToRemove, clipsToAdd);
+
     console.log('Auto-redaction complete');
-  }, [timelineItem, timelineItemId, removeClip, addClip]);
+  }, [timelineItem, timelineItemId, batchUpdateClips]);
 
   const getDetectionKey = (detection: Detection) => {
     return `${detection.start}-${detection.end}-${detection.text}`;
@@ -398,19 +461,17 @@ export function TranscriptView({ timelineItemId }: TranscriptViewProps) {
       (clip) => (start < clip.endTime && end > clip.startTime)
     );
 
-    // Sort by start time
-    overlappingClips.sort((a, b) => a.startTime - b.startTime);
+    const clipsToRemove: string[] = [];
+    const clipsToAdd: any[] = [];
 
     // Process each overlapping clip
     for (const clip of overlappingClips) {
-      // Remove the original clip
-      await removeClip(timelineItemId, clip.id);
-
-      const newClips = [];
+      // Mark for removal
+      clipsToRemove.push(clip.id);
 
       // Before detection: keep unchanged
       if (clip.startTime < start) {
-        newClips.push({
+        clipsToAdd.push({
           id: uuidv4(),
           startTime: clip.startTime,
           endTime: Math.min(clip.endTime, start),
@@ -422,7 +483,7 @@ export function TranscriptView({ timelineItemId }: TranscriptViewProps) {
       const muteStart = Math.max(clip.startTime, start);
       const muteEnd = Math.min(clip.endTime, end);
       if (muteStart < muteEnd) {
-        newClips.push({
+        clipsToAdd.push({
           id: uuidv4(),
           startTime: muteStart,
           endTime: muteEnd,
@@ -432,20 +493,18 @@ export function TranscriptView({ timelineItemId }: TranscriptViewProps) {
 
       // After detection: keep unchanged
       if (clip.endTime > end) {
-        newClips.push({
+        clipsToAdd.push({
           id: uuidv4(),
           startTime: Math.max(clip.startTime, end),
           endTime: clip.endTime,
           muted: clip.muted,
         });
       }
-
-      // Add new clips
-      for (const newClip of newClips) {
-        await addClip(timelineItemId, newClip);
-      }
     }
-  }, [timelineItem, timelineItemId, removeClip, addClip, redactedDetections]);
+
+    // Apply in one batch operation
+    await batchUpdateClips(timelineItemId, clipsToRemove, clipsToAdd);
+  }, [timelineItem, timelineItemId, batchUpdateClips, redactedDetections]);
 
   // Check if a word is part of a detection
   const getWordDetection = useCallback((word: TranscriptWord): Detection | null => {
@@ -512,7 +571,13 @@ export function TranscriptView({ timelineItemId }: TranscriptViewProps) {
             </div>
           </div>
           
-          <Button onClick={handleTranscribe} disabled={isTranscribing}>
+          <Button
+            onClick={(e) => {
+              handleTranscribe();
+              (e.currentTarget as HTMLButtonElement).blur();
+            }}
+            disabled={isTranscribing}
+          >
             {isTranscribing ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />

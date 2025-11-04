@@ -207,7 +207,13 @@ export function DetectionResultsPanel({
         <div className="flex-1 flex flex-col items-center justify-center p-8">
           <AlertTriangle className="h-12 w-12 text-destructive mb-4" />
           <p className="text-sm text-destructive text-center">{error}</p>
-          <Button onClick={handleAnalyze} className="mt-4">
+          <Button
+            onClick={(e) => {
+              handleAnalyze();
+              (e.currentTarget as HTMLButtonElement).blur();
+            }}
+            className="mt-4"
+          >
             Retry Analysis
           </Button>
         </div>
@@ -237,7 +243,15 @@ export function DetectionResultsPanel({
             <Sparkles className="h-5 w-5 text-primary" />
             <h3 className="font-semibold">Detected PII</h3>
           </div>
-          <Button onClick={handleAnalyze} size="sm" variant="outline" disabled={isProcessing}>
+          <Button
+            onClick={(e) => {
+              handleAnalyze();
+              (e.currentTarget as HTMLButtonElement).blur();
+            }}
+            size="sm"
+            variant="outline"
+            disabled={isProcessing}
+          >
             {isProcessing ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Re-analyze'}
           </Button>
         </div>

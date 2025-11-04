@@ -798,14 +798,29 @@ export function AudioEditor({ timelineItemId }: AudioEditorProps) {
 
         {/* Playback controls */}
         <div className="flex gap-2 flex-wrap">
-          <Button onClick={handlePlayPause} size="icon" variant="outline">
+          <Button
+            onClick={(e) => {
+              handlePlayPause();
+              // Blur the button to prevent spacebar from triggering it again
+              (e.currentTarget as HTMLButtonElement).blur();
+            }}
+            size="icon"
+            variant="outline"
+          >
             {playbackState.isPlaying ? (
               <Pause className="h-4 w-4" />
             ) : (
               <Play className="h-4 w-4" />
             )}
           </Button>
-          <Button onClick={handleDeleteClip} variant="outline" size="sm">
+          <Button
+            onClick={(e) => {
+              handleDeleteClip();
+              (e.currentTarget as HTMLButtonElement).blur();
+            }}
+            variant="outline"
+            size="sm"
+          >
             <Trash2 className="mr-2 h-4 w-4" />
             Delete Clip
           </Button>

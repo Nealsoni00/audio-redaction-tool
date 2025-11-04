@@ -7,6 +7,15 @@ export interface MediaFile {
   createdAt: number;
 }
 
+export interface Detection {
+  text: string;
+  category: string;
+  startIndex: number;
+  endIndex: number;
+  start: number;
+  end: number;
+}
+
 export interface TimelineItem {
   id: string;
   mediaId: string;
@@ -14,6 +23,8 @@ export interface TimelineItem {
   duration: number;
   clips: AudioClip[];
   transcript?: Transcript;
+  detections?: Detection[]; // AI-detected PII
+  redactedDetectionKeys?: string[]; // Keys of redacted detections
 }
 
 export type RedactionMode = 'tone' | 'silence';

@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { v4 as uuidv4 } from 'uuid';
-import { MediaFile, TimelineItem, AudioClip, Transcript, PlaybackState, RedactionMode } from './types';
+import { MediaFile, TimelineItem, AudioClip, Transcript, PlaybackState, RedactionMode, Detection } from './types';
 import { db, fileToStoredMediaFile, storedMediaFileToMediaFile } from './db';
 
 interface Store {
@@ -29,9 +29,13 @@ interface Store {
   removeClip: (timelineItemId: string, clipId: string) => Promise<void>;
   updateClip: (timelineItemId: string, clipId: string, updates: Partial<AudioClip>) => Promise<void>;
   toggleClipMute: (timelineItemId: string, clipId: string) => Promise<void>;
+  batchUpdateClips: (timelineItemId: string, clipsToRemove: string[], clipsToAdd: AudioClip[]) => Promise<void>;
 
   // Actions - Transcript
   setTranscript: (timelineItemId: string, transcript: Transcript) => Promise<void>;
+
+  // Actions - Detections
+  setDetections: (timelineItemId: string, detections: Detection[], redactedKeys: string[]) => Promise<void>;
 
   // Actions - Playback
   setPlaybackState: (state: Partial<PlaybackState>) => void;
@@ -184,6 +188,20 @@ export const useStore = create<Store>((set, get) => ({
     await get().updateTimelineItem(timelineItemId, { clips: updatedClips });
   },
 
+  batchUpdateClips: async (timelineItemId: string, clipsToRemove: string[], clipsToAdd: AudioClip[]) => {
+    const item = get().timelineItems.find((item) => item.id === timelineItemId);
+    if (!item) return;
+
+    // Remove specified clips
+    let updatedClips = item.clips.filter((clip) => !clipsToRemove.includes(clip.id));
+
+    // Add new clips
+    updatedClips = [...updatedClips, ...clipsToAdd];
+
+    // Single update operation
+    await get().updateTimelineItem(timelineItemId, { clips: updatedClips });
+  },
+
   updateClip: async (
     timelineItemId: string,
     clipId: string,
@@ -211,6 +229,14 @@ export const useStore = create<Store>((set, get) => ({
   // Transcript Actions
   setTranscript: async (timelineItemId: string, transcript: Transcript) => {
     await get().updateTimelineItem(timelineItemId, { transcript });
+  },
+
+  // Detection Actions
+  setDetections: async (timelineItemId: string, detections: Detection[], redactedKeys: string[]) => {
+    await get().updateTimelineItem(timelineItemId, {
+      detections,
+      redactedDetectionKeys: redactedKeys,
+    });
   },
 
   // Playback Actions

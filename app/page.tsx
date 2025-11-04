@@ -44,8 +44,25 @@ export default function Home() {
   // Handle spacebar for play/pause
   useEffect(() => {
     const handleKeyPress = (e: KeyboardEvent) => {
-      if (e.code === 'Space' && e.target === document.body) {
+      // Only handle spacebar if not typing in an input/textarea
+      if (e.code === 'Space') {
+        const target = e.target as HTMLElement;
+        const isInputField = target.tagName === 'INPUT' ||
+                            target.tagName === 'TEXTAREA' ||
+                            target.isContentEditable;
+
+        // Don't interfere with typing in input fields
+        if (isInputField) {
+          return;
+        }
+
+        // Prevent default spacebar behavior (scrolling, button clicks, etc.)
         e.preventDefault();
+
+        // Blur any focused element to prevent button clicks on subsequent spacebar presses
+        if (document.activeElement instanceof HTMLElement) {
+          document.activeElement.blur();
+        }
         const { 
           playbackState, 
           setPlaybackState, 

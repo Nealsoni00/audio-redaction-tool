@@ -484,7 +484,11 @@ export function Timeline() {
                 <Button
                   size="icon"
                   variant="outline"
-                  onClick={togglePlayback}
+                  onClick={(e) => {
+                    togglePlayback();
+                    // Blur the button to prevent spacebar from triggering it again
+                    (e.currentTarget as HTMLButtonElement).blur();
+                  }}
                 >
                   {playbackState.isPlaying ? (
                     <Pause className="h-4 w-4" />
