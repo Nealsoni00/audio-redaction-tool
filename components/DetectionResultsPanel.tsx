@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Loader2, Sparkles, ChevronDown, ChevronRight, Eye, EyeOff, ShieldAlert, AlertTriangle } from 'lucide-react';
 import { REDACTION_CATEGORIES, getAllSubcategoryIds, isCriticalCategory } from '@/lib/redaction-categories';
@@ -21,6 +21,7 @@ interface DetectionResultsPanelProps {
   redactedDetections: Set<string>;
   onToggleRedaction: (detection: Detection) => void;
   onAutoRedact: (detections: Detection[]) => void;
+  isHydrated: boolean;
 }
 
 // Category color mapping
@@ -87,18 +88,18 @@ export function DetectionResultsPanel({
   redactedDetections,
   onToggleRedaction,
   onAutoRedact,
+  isHydrated,
 }: DetectionResultsPanelProps) {
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
-  const [hasAnalyzed, setHasAnalyzed] = useState(false);
+  const [hasAnalyzed, setHasAnalyzed] = useState(() => detections.length > 0);
 
-  // Auto-analyze on mount
   useEffect(() => {
-    if (segments && segments.length > 0 && !hasAnalyzed) {
-      handleAnalyze();
+    if (detections.length > 0) {
+      setHasAnalyzed(true);
     }
-  }, [segments]);
+  }, [detections.length]);
 
   const toggleCategory = (categoryId: string) => {
     setExpandedCategories(prev => {
@@ -112,7 +113,7 @@ export function DetectionResultsPanel({
     });
   };
 
-  const handleAnalyze = async () => {
+  const handleAnalyze = useCallback(async () => {
     setIsProcessing(true);
     setError(null);
 
@@ -164,7 +165,15 @@ export function DetectionResultsPanel({
     } finally {
       setIsProcessing(false);
     }
-  };
+  }, [segments, onDetectionsFound, onAutoRedact]);
+
+  // Auto-analyze once segments are available and no cached detections are present
+  useEffect(() => {
+    if (!isHydrated) return;
+    if (segments && segments.length > 0 && detections.length === 0 && !hasAnalyzed) {
+      handleAnalyze();
+    }
+  }, [segments, detections.length, hasAnalyzed, isHydrated, handleAnalyze]);
 
   const getCategoryLabel = (subcategoryId: string) => {
     for (const category of REDACTION_CATEGORIES) {
@@ -209,6 +218,7 @@ export function DetectionResultsPanel({
           <p className="text-sm text-destructive text-center">{error}</p>
           <Button
             onClick={(e) => {
+              setHasAnalyzed(false);
               handleAnalyze();
               (e.currentTarget as HTMLButtonElement).blur();
             }}
@@ -245,6 +255,7 @@ export function DetectionResultsPanel({
           </div>
           <Button
             onClick={(e) => {
+              setHasAnalyzed(false);
               handleAnalyze();
               (e.currentTarget as HTMLButtonElement).blur();
             }}

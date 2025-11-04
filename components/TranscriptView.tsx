@@ -34,6 +34,7 @@ export function TranscriptView({ timelineItemId }: TranscriptViewProps) {
   // Smart redaction state
   const [detections, setDetections] = useState<Detection[]>([]);
   const [redactedDetections, setRedactedDetections] = useState<Set<string>>(new Set());
+  const [detectionsHydrated, setDetectionsHydrated] = useState(false);
 
   const timelineItem = timelineItems.find((item) => item.id === timelineItemId);
   const mediaFile = timelineItem ? mediaFiles.find((m) => m.id === timelineItem.mediaId) : null;
@@ -43,12 +44,26 @@ export function TranscriptView({ timelineItemId }: TranscriptViewProps) {
 
   // Load detections from persisted state on mount
   useEffect(() => {
-    if (timelineItem?.detections) {
+    if (!timelineItem) {
+      setDetections([]);
+      setRedactedDetections(new Set());
+      setDetectionsHydrated(false);
+      return;
+    }
+
+    if (timelineItem.detections) {
       setDetections(timelineItem.detections);
       if (timelineItem.redactedDetectionKeys) {
         setRedactedDetections(new Set(timelineItem.redactedDetectionKeys));
+      } else {
+        setRedactedDetections(new Set());
       }
+    } else {
+      setDetections([]);
+      setRedactedDetections(new Set());
     }
+
+    setDetectionsHydrated(true);
   }, [timelineItem?.id]); // Only run when timeline item changes
 
   // Persist redactedDetections whenever they change
@@ -354,7 +369,80 @@ export function TranscriptView({ timelineItemId }: TranscriptViewProps) {
 
     console.log('Current clips:', currentTimelineItem.clips);
 
-    // Find all unique clips that overlap with ANY merged range (process each clip only once)
+    // Helper to merge any overlapping ranges
+    const mergeRanges = (ranges: Array<{ start: number; end: number }>) => {
+      if (ranges.length === 0) return [];
+      const sorted = [...ranges].sort((a, b) => a.start - b.start);
+      const merged: Array<{ start: number; end: number }> = [sorted[0]];
+
+      for (let i = 1; i < sorted.length; i++) {
+        const current = sorted[i];
+        const last = merged[merged.length - 1];
+        if (current.start <= last.end) {
+          last.end = Math.max(last.end, current.end);
+        } else {
+          merged.push({ ...current });
+        }
+      }
+
+      return merged;
+    };
+
+    const EPS = 0.001;
+
+    // Merge existing muted clips to understand which portions are already redacted
+    const existingMutedRanges = mergeRanges(
+      currentTimelineItem.clips
+        .filter(clip => clip.muted)
+        .map(clip => ({ start: clip.startTime, end: clip.endTime }))
+    );
+
+    // Helper to extract only uncovered portions of a range, accounting for floating-point noise
+    const subtractRanges = (
+      range: { start: number; end: number },
+      mutedRanges: Array<{ start: number; end: number }>
+    ) => {
+      const uncovered: Array<{ start: number; end: number }> = [];
+      let cursor = range.start;
+
+      for (const muted of mutedRanges) {
+        if (muted.end <= cursor + EPS) {
+          continue;
+        }
+        if (muted.start >= range.end - EPS) {
+          break;
+        }
+
+        const gapEnd = Math.min(muted.start, range.end);
+        if (gapEnd - cursor > EPS) {
+          uncovered.push({ start: cursor, end: gapEnd });
+        }
+
+        cursor = Math.max(cursor, muted.end);
+        if (cursor >= range.end - EPS) {
+          break;
+        }
+      }
+
+      if (range.end - cursor > EPS) {
+        uncovered.push({ start: cursor, end: range.end });
+      }
+
+      return uncovered;
+    };
+
+    // Determine which parts of the merged ranges still need to be muted
+    const rangesToApply = mergedRanges
+      .flatMap(range => subtractRanges(range, existingMutedRanges))
+      .filter(segment => segment.end - segment.start > EPS)
+      .sort((a, b) => a.start - b.start);
+
+    if (rangesToApply.length === 0) {
+      console.log('Auto-redaction skipped: all ranges already fully muted');
+      return;
+    }
+
+    // Find all unique clips that overlap with ranges we still need to mute
     const processedClipIds = new Set<string>();
     const clipsToRemove: string[] = [];
     const clipsToAdd: any[] = [];
@@ -362,58 +450,49 @@ export function TranscriptView({ timelineItemId }: TranscriptViewProps) {
     for (const clip of currentTimelineItem.clips) {
       // Skip if already processed or already muted
       if (processedClipIds.has(clip.id) || clip.muted) {
-        console.log('Skipping clip (already processed or muted):', clip);
         continue;
       }
 
       // Find all ranges that overlap with this clip
-      const overlappingRanges = mergedRanges.filter(
+      const overlappingRanges = rangesToApply.filter(
         range => clip.startTime < range.end && clip.endTime > range.start
       );
 
       if (overlappingRanges.length === 0) {
-        console.log('No overlapping ranges for clip:', clip);
         continue; // This clip doesn't overlap with any detection
       }
 
-      console.log(`Processing clip ${clip.id}, found ${overlappingRanges.length} overlapping ranges`);
-
-      // Mark as processed
       processedClipIds.add(clip.id);
       clipsToRemove.push(clip.id);
 
-      // Build a list of sections for this clip (alternating unmuted/muted)
       const sections: Array<{ start: number; end: number; muted: boolean }> = [];
       let currentPos = clip.startTime;
 
-      // Sort overlapping ranges by start time
       overlappingRanges.sort((a, b) => a.start - b.start);
 
       for (const range of overlappingRanges) {
-        // Add unmuted section before this range (if any)
-        if (currentPos < range.start) {
+        const trimmedStart = Math.max(range.start, clip.startTime);
+        const trimmedEnd = Math.min(range.end, clip.endTime);
+
+        if (trimmedStart - currentPos > EPS) {
           sections.push({
             start: currentPos,
-            end: Math.min(range.start, clip.endTime),
+            end: trimmedStart,
             muted: false,
           });
         }
 
-        // Add muted section for this range
-        const muteStart = Math.max(currentPos, range.start);
-        const muteEnd = Math.min(range.end, clip.endTime);
-        if (muteStart < muteEnd) {
+        if (trimmedEnd - trimmedStart > EPS) {
           sections.push({
-            start: muteStart,
-            end: muteEnd,
+            start: trimmedStart,
+            end: trimmedEnd,
             muted: true,
           });
-          currentPos = muteEnd;
+          currentPos = trimmedEnd;
         }
       }
 
-      // Add final unmuted section (if any)
-      if (currentPos < clip.endTime) {
+      if (clip.endTime - currentPos > EPS) {
         sections.push({
           start: currentPos,
           end: clip.endTime,
@@ -421,9 +500,8 @@ export function TranscriptView({ timelineItemId }: TranscriptViewProps) {
         });
       }
 
-      // Convert sections to clips
       for (const section of sections) {
-        if (section.start < section.end) {
+        if (section.end - section.start > EPS) {
           clipsToAdd.push({
             id: uuidv4(),
             startTime: section.start,
@@ -434,9 +512,13 @@ export function TranscriptView({ timelineItemId }: TranscriptViewProps) {
       }
     }
 
+    if (clipsToRemove.length === 0 && clipsToAdd.length === 0) {
+      console.log('Auto-redaction skipped: no eligible clips to update');
+      return;
+    }
+
     console.log(`Batch operation: removing ${clipsToRemove.length} clips, adding ${clipsToAdd.length} clips`);
 
-    // Apply all operations in a single batch update (no flickering!)
     await batchUpdateClips(timelineItemId, clipsToRemove, clipsToAdd);
 
     console.log('Auto-redaction complete');
@@ -761,6 +843,7 @@ export function TranscriptView({ timelineItemId }: TranscriptViewProps) {
           redactedDetections={redactedDetections}
           onToggleRedaction={handleToggleRedaction}
           onAutoRedact={handleAutoRedact}
+          isHydrated={detectionsHydrated}
         />
       </div>
     </div>

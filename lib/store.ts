@@ -158,15 +158,11 @@ export const useStore = create<Store>((set, get) => ({
   },
 
   updateTimelineItem: async (id: string, updates: Partial<TimelineItem>) => {
-    const item = get().timelineItems.find((item) => item.id === id);
-    if (!item) return;
-
-    const updatedItem = { ...item, ...updates };
     await db.timelineItems.update(id, updates);
 
     set((state) => ({
       timelineItems: state.timelineItems.map((item) =>
-        item.id === id ? updatedItem : item
+        item.id === id ? { ...item, ...updates } : item
       ),
     }));
   },
