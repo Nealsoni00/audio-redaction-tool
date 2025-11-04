@@ -343,11 +343,16 @@ export function TranscriptView({ timelineItemId }: TranscriptViewProps) {
       }
     }
 
-    console.log(`Merged ${detectionsToRedact.length} detections into ${mergedRanges.length} ranges`);
+    console.log(`Merged ${detectionsToRedact.length} detections into ${mergedRanges.length} ranges`, mergedRanges);
 
     // Get the current timeline item state
     const currentTimelineItem = useStore.getState().timelineItems.find(item => item.id === timelineItemId);
-    if (!currentTimelineItem) return;
+    if (!currentTimelineItem) {
+      console.error('Timeline item not found:', timelineItemId);
+      return;
+    }
+
+    console.log('Current clips:', currentTimelineItem.clips);
 
     // Find all unique clips that overlap with ANY merged range (process each clip only once)
     const processedClipIds = new Set<string>();
@@ -357,6 +362,7 @@ export function TranscriptView({ timelineItemId }: TranscriptViewProps) {
     for (const clip of currentTimelineItem.clips) {
       // Skip if already processed or already muted
       if (processedClipIds.has(clip.id) || clip.muted) {
+        console.log('Skipping clip (already processed or muted):', clip);
         continue;
       }
 
@@ -366,8 +372,11 @@ export function TranscriptView({ timelineItemId }: TranscriptViewProps) {
       );
 
       if (overlappingRanges.length === 0) {
+        console.log('No overlapping ranges for clip:', clip);
         continue; // This clip doesn't overlap with any detection
       }
+
+      console.log(`Processing clip ${clip.id}, found ${overlappingRanges.length} overlapping ranges`);
 
       // Mark as processed
       processedClipIds.add(clip.id);
