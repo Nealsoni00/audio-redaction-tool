@@ -12,8 +12,8 @@ export function ResizableDivider({ direction, onResize, className = '' }: Resiza
   const isDraggingRef = useRef(false);
   const startPosRef = useRef(0);
   const pointerIdRef = useRef<number | null>(null);
-  const moveHandlerRef = useRef<(event: PointerEvent) => void>();
-  const upHandlerRef = useRef<(event: PointerEvent) => void>();
+  const moveHandlerRef = useRef<((event: PointerEvent) => void) | undefined>(undefined);
+  const upHandlerRef = useRef<((event: PointerEvent) => void) | undefined>(undefined);
 
   const cleanupPointerListeners = useCallback(() => {
     if (moveHandlerRef.current) {
