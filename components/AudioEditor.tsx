@@ -772,7 +772,7 @@ export function AudioEditor({ timelineItemId }: AudioEditorProps) {
 
   return (
     <div className="flex flex-col h-full">
-      <div className="p-4 border-b flex-shrink-0 overflow-x-auto max-w-full">
+      <div className="p-4 border-b flex-shrink-0 max-w-full overflow-hidden">
         <div className="flex items-start justify-between mb-2">
           <h3 className="text-lg font-semibold">{mediaFile.name}</h3>
           {mutedCount > 0 && (

@@ -3,7 +3,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { useStore } from '@/lib/store';
 import { Button } from '@/components/ui/button';
-import { Loader2, Volume2, VolumeX, AlertCircle, Sparkles } from 'lucide-react';
+import { Loader2, Volume2, VolumeX, AlertCircle, AlertTriangle, Sparkles } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import { TranscriptWord } from '@/lib/types';
 import { DetectionResultsPanel, getCategoryColor } from './DetectionResultsPanel';
@@ -22,6 +22,9 @@ interface TranscriptViewProps {
   timelineItemId: string;
 }
 
+const MAX_TRANSCRIPTION_BYTES = 5 * 1024 * 1024; // 5 MB limit for free-tier deployment
+const MAX_TRANSCRIPTION_MB = 5;
+
 export function TranscriptView({ timelineItemId }: TranscriptViewProps) {
   const { timelineItems, mediaFiles, setTranscript, addClip, updateClip, removeClip, batchUpdateClips, setDetections: persistDetections, playbackState } = useStore();
   const [isTranscribing, setIsTranscribing] = useState(false);
@@ -36,14 +39,23 @@ export function TranscriptView({ timelineItemId }: TranscriptViewProps) {
   const [redactedDetections, setRedactedDetections] = useState<Set<string>>(new Set());
   const [detectionsHydrated, setDetectionsHydrated] = useState(false);
 
+  const formatMegabytes = (bytes: number) => (bytes / (1024 * 1024)).toFixed(1);
+
   const timelineItem = timelineItems.find((item) => item.id === timelineItemId);
   const mediaFile = timelineItem ? mediaFiles.find((m) => m.id === timelineItem.mediaId) : null;
 
   // Calculate current time relative to this timeline item
   const currentLocalTime = timelineItem ? playbackState.currentTime - timelineItem.startTime : 0;
 
+  const formattedMediaSizeMB = mediaFile ? formatMegabytes(mediaFile.file.size) : null;
+  const isTranscriptionTooLarge = mediaFile ? mediaFile.file.size > MAX_TRANSCRIPTION_BYTES : false;
+  const transcriptionLimitMessage = isTranscriptionTooLarge && formattedMediaSizeMB
+    ? `Transcription unavailable: this recording is ${formattedMediaSizeMB} MB. Our Vercel free-tier deployment can only send files up to ${MAX_TRANSCRIPTION_MB} MB to Deepgram. Please trim the audio or use manual redaction.`
+    : null;
+
   // Load detections from persisted state on mount
   useEffect(() => {
+    setError(null);
     if (!timelineItem) {
       setDetections([]);
       setRedactedDetections(new Set());
@@ -76,6 +88,14 @@ export function TranscriptView({ timelineItemId }: TranscriptViewProps) {
 
   const handleTranscribe = async () => {
     if (!mediaFile) return;
+
+    if (mediaFile.file.size > MAX_TRANSCRIPTION_BYTES) {
+      setError(
+        transcriptionLimitMessage ||
+          `Transcription unavailable: file exceeds the ${MAX_TRANSCRIPTION_MB} MB limit for this deployment.`
+      );
+      return;
+    }
 
     setIsTranscribing(true);
     setError(null);
@@ -662,23 +682,48 @@ export function TranscriptView({ timelineItemId }: TranscriptViewProps) {
             </div>
           </div>
           
+          {isTranscriptionTooLarge && transcriptionLimitMessage && (
+            <div className="border-l-4 border-destructive bg-destructive/10 dark:bg-destructive/20 p-4 rounded text-left">
+              <div className="flex items-start gap-3">
+                <AlertTriangle className="h-5 w-5 text-destructive flex-shrink-0 mt-0.5" />
+                <div className="space-y-2">
+                  <p className="text-sm font-semibold text-destructive">
+                    File too large for transcription
+                  </p>
+                  <p className="text-xs text-destructive/90 dark:text-destructive">
+                    {transcriptionLimitMessage} You can still redact manually without transcription.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+          
           <Button
             onClick={(e) => {
               handleTranscribe();
               (e.currentTarget as HTMLButtonElement).blur();
             }}
-            disabled={isTranscribing}
+            disabled={isTranscribing || isTranscriptionTooLarge}
+            title={
+              isTranscriptionTooLarge
+                ? `Transcription limited to ${MAX_TRANSCRIPTION_MB} MB on this deployment`
+                : undefined
+            }
           >
             {isTranscribing ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 Transcribing...
               </>
+            ) : isTranscriptionTooLarge ? (
+              `File exceeds ${MAX_TRANSCRIPTION_MB} MB limit`
             ) : (
               'Transcribe Audio'
             )}
           </Button>
-          {error && <p className="text-sm text-destructive mt-2">{error}</p>}
+          {!isTranscriptionTooLarge && error && (
+            <p className="text-sm text-destructive mt-2">{error}</p>
+          )}
         </div>
       </div>
     );
