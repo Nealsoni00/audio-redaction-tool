@@ -10,6 +10,7 @@ import { Play, Pause, Trash2, ZoomIn, ZoomOut, Volume2, VolumeX } from 'lucide-r
 import { Separator } from '@/components/ui/separator';
 import { TranscriptView } from './TranscriptView';
 import { v4 as uuidv4 } from 'uuid';
+import { ResizableDivider } from '@/components/ResizableDivider';
 
 interface AudioEditorProps {
   timelineItemId: string;
@@ -43,10 +44,52 @@ export function AudioEditor({ timelineItemId }: AudioEditorProps) {
   const zoomTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const isSyncingTimeRef = useRef(false); // Prevent circular time updates
   const timelineItemRef = useRef<TimelineItem | undefined>(undefined); // Keep latest timeline item
+  const editorContainerRef = useRef<HTMLDivElement | null>(null);
 
   const timelineItem = timelineItems.find((item) => item.id === timelineItemId);
   const mediaFile = timelineItem ? mediaFiles.find((m) => m.id === timelineItem.mediaId) : null;
   const selectedClip = selectedClipId ? timelineItem?.clips.find((c) => c.id === selectedClipId) : null;
+  const [transcriptHeight, setTranscriptHeight] = useState(500);
+  const MIN_TRANSCRIPT_HEIGHT = 260;
+  const FALLBACK_MIN_TRANSCRIPT_HEIGHT = 200;
+  const MIN_WAVEFORM_HEIGHT = 160;
+
+  const clampTranscriptHeight = useCallback(
+    (height: number) => {
+      const containerHeight = editorContainerRef.current?.clientHeight ?? 0;
+      const maxAllowed =
+        containerHeight > 0 ? containerHeight - MIN_WAVEFORM_HEIGHT : undefined;
+      const minAllowed =
+        maxAllowed !== undefined && maxAllowed < MIN_TRANSCRIPT_HEIGHT
+          ? Math.max(FALLBACK_MIN_TRANSCRIPT_HEIGHT, maxAllowed)
+          : MIN_TRANSCRIPT_HEIGHT;
+      let next = Math.max(minAllowed, height);
+      if (maxAllowed !== undefined) {
+        next = Math.min(next, Math.max(minAllowed, maxAllowed));
+      }
+      return next;
+    },
+    [MIN_TRANSCRIPT_HEIGHT, MIN_WAVEFORM_HEIGHT, FALLBACK_MIN_TRANSCRIPT_HEIGHT]
+  );
+
+  const handleTranscriptResize = useCallback(
+    (delta: number) => {
+      setTranscriptHeight((prev) => clampTranscriptHeight(prev - delta));
+    },
+    [clampTranscriptHeight]
+  );
+
+  useEffect(() => {
+    setTranscriptHeight((prev) => clampTranscriptHeight(prev));
+  }, [timelineItemId, clampTranscriptHeight]);
+
+  useEffect(() => {
+    const handleWindowResize = () => {
+      setTranscriptHeight((prev) => clampTranscriptHeight(prev));
+    };
+    window.addEventListener('resize', handleWindowResize);
+    return () => window.removeEventListener('resize', handleWindowResize);
+  }, [clampTranscriptHeight]);
   
   // Update ref whenever timelineItem changes
   useEffect(() => {
@@ -771,10 +814,19 @@ export function AudioEditor({ timelineItemId }: AudioEditorProps) {
   }
 
   return (
-    <div className="flex flex-col h-full">
-      <div className="p-4 border-b flex-shrink-0 max-w-full overflow-hidden">
-        <div className="flex items-start justify-between mb-2">
-          <h3 className="text-lg font-semibold">{mediaFile.name}</h3>
+    <div ref={editorContainerRef} className="flex flex-col h-full min-h-0">
+      <div
+        className="overflow-hidden flex flex-col"
+        style={{ height: `calc(100% - ${transcriptHeight}px)` }}
+      >
+        <div className="p-4 border-b flex-shrink-0 max-w-full overflow-hidden">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <h3 className="text-lg font-semibold">{mediaFile.name}</h3>
+            <div className="text-sm text-muted-foreground">
+              {formatTime(playbackState.currentTime)} / {formatTime(mediaFile.duration)}
+            </div>
+          </div>
           {mutedCount > 0 && (
             <div className="flex items-center gap-2">
               <div className="bg-destructive/10 text-destructive px-2 py-1 rounded text-xs font-medium">
@@ -792,12 +844,9 @@ export function AudioEditor({ timelineItemId }: AudioEditorProps) {
             </div>
           )}
         </div>
-        <div className="text-sm text-muted-foreground mb-4">
-          {formatTime(playbackState.currentTime)} / {formatTime(mediaFile.duration)}
-        </div>
 
         {/* Playback controls */}
-        <div className="flex gap-2 flex-wrap">
+        <div className="flex gap-2 flex-wrap items-center mt-3">
           <Button
             onClick={(e) => {
               handlePlayPause();
@@ -895,18 +944,18 @@ export function AudioEditor({ timelineItemId }: AudioEditorProps) {
           </Button>
           <span className="text-xs text-muted-foreground">(or Cmd/Ctrl + Scroll)</span>
         </div>
-      </div>
+        </div>
 
-      {/* Waveform */}
-      <div
-        ref={waveformContainerRef}
-        className="flex-shrink-0 overflow-x-auto overflow-y-hidden max-w-full"
-        style={{ width: '100%' }}
-      >
-        <div className="relative">
-          {/* Time ruler */}
-          {mediaFile && (
-            <div className="h-6 border-b relative bg-muted/30 px-4" style={{ width: `${mediaFile.duration * waveformZoom}px`, minWidth: '100%' }}>
+        {/* Waveform */}
+        <div
+          ref={waveformContainerRef}
+          className="flex-1 min-h-0 overflow-x-auto overflow-y-hidden max-w-full"
+          style={{ width: '100%' }}
+        >
+          <div className="relative h-full flex flex-col">
+            {/* Time ruler */}
+            {mediaFile && (
+              <div className="h-6 border-b relative bg-muted/30 px-4" style={{ width: `${mediaFile.duration * waveformZoom}px`, minWidth: '100%' }}>
               {(() => {
                 // Calculate the actual rendered width (accounting for minWidth: 100%)
                 const naturalWidth = mediaFile.duration * waveformZoom;
@@ -949,20 +998,24 @@ export function AudioEditor({ timelineItemId }: AudioEditorProps) {
                   );
                 });
               })()}
-            </div>
-          )}
+              </div>
+            )}
 
-          {/* Waveform container */}
-          <div className="p-4 cursor-pointer" onClick={handleWaveformClick}>
-            <div ref={waveformRef} />
+            {/* Waveform container */}
+            <div className="flex-1 min-h-0 p-4 cursor-pointer" onClick={handleWaveformClick}>
+              <div ref={waveformRef} />
+            </div>
           </div>
         </div>
       </div>
 
-      <Separator className="flex-shrink-0" />
+      <ResizableDivider direction="horizontal" onResize={handleTranscriptResize} />
 
       {/* Transcript */}
-      <div className="flex-1 min-h-0 overflow-y-auto">
+      <div
+        className="flex-shrink-0 border-t overflow-hidden"
+        style={{ height: `${transcriptHeight}px` }}
+      >
         <TranscriptView timelineItemId={timelineItemId} />
       </div>
     </div>

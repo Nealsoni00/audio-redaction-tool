@@ -8,6 +8,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { TranscriptWord } from '@/lib/types';
 import { DetectionResultsPanel, getCategoryColor } from './DetectionResultsPanel';
 import { REDACTION_CATEGORIES } from '@/lib/redaction-categories';
+import { ResizableDivider } from '@/components/ResizableDivider';
 
 interface Detection {
   text: string;
@@ -38,6 +39,11 @@ export function TranscriptView({ timelineItemId }: TranscriptViewProps) {
   const [detections, setDetections] = useState<Detection[]>([]);
   const [redactedDetections, setRedactedDetections] = useState<Set<string>>(new Set());
   const [detectionsHydrated, setDetectionsHydrated] = useState(false);
+  const [sidebarWidth, setSidebarWidth] = useState(320);
+  const layoutRef = useRef<HTMLDivElement | null>(null);
+  const MIN_SIDEBAR_WIDTH = 260;
+  const FALLBACK_MIN_SIDEBAR_WIDTH = 160;
+  const MIN_TRANSCRIPT_WIDTH = 420;
 
   const formatMegabytes = (bytes: number) => (bytes / (1024 * 1024)).toFixed(1);
 
@@ -52,6 +58,51 @@ export function TranscriptView({ timelineItemId }: TranscriptViewProps) {
   const transcriptionLimitMessage = isTranscriptionTooLarge && formattedMediaSizeMB
     ? `Transcription unavailable: this recording is ${formattedMediaSizeMB} MB. Our Vercel free-tier deployment can only send files up to ${MAX_TRANSCRIPTION_MB} MB to Deepgram. Please trim the audio or use manual redaction.`
     : null;
+
+  const clampSidebar = useCallback(
+    (width: number, containerWidth?: number) => {
+      const totalWidth = containerWidth ?? layoutRef.current?.clientWidth ?? 0;
+      const available = totalWidth > 0 ? totalWidth - MIN_TRANSCRIPT_WIDTH : undefined;
+      const minAllowed =
+        available !== undefined && available < MIN_SIDEBAR_WIDTH
+          ? Math.max(FALLBACK_MIN_SIDEBAR_WIDTH, available)
+          : MIN_SIDEBAR_WIDTH;
+      const maxAllowed =
+        available !== undefined ? Math.max(minAllowed, available) : undefined;
+      let next = Math.max(minAllowed, width);
+      if (maxAllowed !== undefined) {
+        next = Math.min(next, maxAllowed);
+      }
+      return next;
+    },
+    [MIN_SIDEBAR_WIDTH, MIN_TRANSCRIPT_WIDTH, FALLBACK_MIN_SIDEBAR_WIDTH]
+  );
+
+  const handleSidebarResize = useCallback(
+    (delta: number) => {
+      setSidebarWidth((prev) => clampSidebar(prev - delta));
+    },
+    [clampSidebar]
+  );
+
+  useEffect(() => {
+    const containerWidth = layoutRef.current?.clientWidth ?? 0;
+    if (containerWidth > 0) {
+      setSidebarWidth((prev) => clampSidebar(prev, containerWidth));
+    }
+  }, [timelineItemId, clampSidebar]);
+
+  useEffect(() => {
+    const handleResize = () => {
+      const containerWidth = layoutRef.current?.clientWidth ?? 0;
+      if (containerWidth > 0) {
+        setSidebarWidth((prev) => clampSidebar(prev, containerWidth));
+      }
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, [clampSidebar]);
 
   // Load detections from persisted state on mount
   useEffect(() => {
@@ -91,14 +142,13 @@ export function TranscriptView({ timelineItemId }: TranscriptViewProps) {
 
     if (mediaFile.file.size > MAX_TRANSCRIPTION_BYTES) {
       setError(
-        transcriptionLimitMessage ||
-          `Transcription unavailable: file exceeds the ${MAX_TRANSCRIPTION_MB} MB limit for this deployment.`
+        `Attempting transcription anyway. Hosted deployments on the Vercel free tier reject files over ${MAX_TRANSCRIPTION_MB} MB, so this may fail.`
       );
-      return;
+    } else {
+      setError(null);
     }
 
     setIsTranscribing(true);
-    setError(null);
 
     try {
       // Send audio file to our server endpoint for transcription
@@ -703,10 +753,10 @@ export function TranscriptView({ timelineItemId }: TranscriptViewProps) {
               handleTranscribe();
               (e.currentTarget as HTMLButtonElement).blur();
             }}
-            disabled={isTranscribing || isTranscriptionTooLarge}
+            disabled={isTranscribing}
             title={
               isTranscriptionTooLarge
-                ? `Transcription limited to ${MAX_TRANSCRIPTION_MB} MB on this deployment`
+                ? `Attempt transcription anyway (limit ${MAX_TRANSCRIPTION_MB} MB on hosted deployments)`
                 : undefined
             }
           >
@@ -716,12 +766,12 @@ export function TranscriptView({ timelineItemId }: TranscriptViewProps) {
                 Transcribing...
               </>
             ) : isTranscriptionTooLarge ? (
-              `File exceeds ${MAX_TRANSCRIPTION_MB} MB limit`
+              'Attempt Transcription (may fail)'
             ) : (
               'Transcribe Audio'
             )}
           </Button>
-          {!isTranscriptionTooLarge && error && (
+          {error && (
             <p className="text-sm text-destructive mt-2">{error}</p>
           )}
         </div>
@@ -757,9 +807,12 @@ export function TranscriptView({ timelineItemId }: TranscriptViewProps) {
   };
 
   return (
-    <div className="flex h-full" onMouseUp={handleMouseUp}>
+    <div ref={layoutRef} className="flex h-full min-h-0 min-w-0" onMouseUp={handleMouseUp}>
       {/* Left side: Transcript */}
-      <div className="flex-1 flex flex-col relative">
+      <div
+        className="flex-1 flex flex-col relative min-h-0"
+        style={{ minWidth: MIN_TRANSCRIPT_WIDTH }}
+      >
         {/* Sticky header */}
         <div className="p-4 border-b bg-background sticky top-0 z-10">
           <h4 className="text-sm font-semibold mb-2">Transcript</h4>
@@ -769,119 +822,125 @@ export function TranscriptView({ timelineItemId }: TranscriptViewProps) {
         </div>
 
         {/* Floating selection action bar - absolutely positioned, overlays on top */}
-      {selectedWords.length > 0 && (
-        <div className="absolute top-[85px] left-4 right-4 z-20 animate-in slide-in-from-top-2 duration-200 pointer-events-none">
-          <div className="flex items-center gap-2 p-2 bg-primary/95 backdrop-blur-sm rounded-lg border border-primary shadow-lg pointer-events-auto">
-            <span className="text-xs font-medium text-primary-foreground">
-              {selectedWords.length} word{selectedWords.length !== 1 ? 's' : ''} selected
-            </span>
-            <Button onClick={handleBulkRedact} size="sm" variant="secondary">
-              {areAllSelectedWordsMuted() ? (
-                <>
-                  <Volume2 className="mr-2 h-3 w-3" />
-                  Un-redact Selection
-                </>
-              ) : (
-                <>
-                  <VolumeX className="mr-2 h-3 w-3" />
-                  Redact Selection
-                </>
-              )}
-            </Button>
-            <Button onClick={handleClearSelection} size="sm" variant="ghost" className="text-primary-foreground hover:bg-primary-foreground/20">
-              Clear
-            </Button>
+        {selectedWords.length > 0 && (
+          <div className="absolute top-[85px] left-4 right-4 z-20 animate-in slide-in-from-top-2 duration-200 pointer-events-none">
+            <div className="flex items-center gap-2 p-2 bg-primary/95 backdrop-blur-sm rounded-lg border border-primary shadow-lg pointer-events-auto">
+              <span className="text-xs font-medium text-primary-foreground">
+                {selectedWords.length} word{selectedWords.length !== 1 ? 's' : ''} selected
+              </span>
+              <Button onClick={handleBulkRedact} size="sm" variant="secondary">
+                {areAllSelectedWordsMuted() ? (
+                  <>
+                    <Volume2 className="mr-2 h-3 w-3" />
+                    Un-redact Selection
+                  </>
+                ) : (
+                  <>
+                    <VolumeX className="mr-2 h-3 w-3" />
+                    Redact Selection
+                  </>
+                )}
+              </Button>
+              <Button onClick={handleClearSelection} size="sm" variant="ghost" className="text-primary-foreground hover:bg-primary-foreground/20">
+                Clear
+              </Button>
+            </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* Scrollable transcript content - with top padding to prevent content from being hidden under floating bar */}
-      <div ref={containerRef} className="flex-1 overflow-y-auto p-4 pt-16 space-y-4" style={{ userSelect: 'none' }}>
-        {timelineItem.transcript.segments.map((segment, segmentIndex) => (
-          <div
-            key={segmentIndex}
-            className={`border-l-4 pl-4 py-2 rounded-r ${getSpeakerBgColor(segment.speaker)} ${getSpeakerColor(segment.speaker)}`}
-          >
-            <div className="flex items-center gap-2 mb-2">
-              {segment.speaker !== undefined && (
-                <span className="text-xs font-semibold px-2 py-0.5 rounded bg-background/50">
-                  Speaker {segment.speaker}
-                </span>
-              )}
-              <div className="text-xs text-muted-foreground">
-                {formatTime(segment.start)} - {formatTime(segment.end)}
+        {/* Scrollable transcript content - with top padding to prevent content from being hidden under floating bar */}
+        <div ref={containerRef} className="flex-1 overflow-y-auto p-4 pt-16 space-y-4" style={{ userSelect: 'none' }}>
+          {timelineItem.transcript.segments.map((segment, segmentIndex) => (
+            <div
+              key={segmentIndex}
+              className={`border-l-4 pl-4 py-2 rounded-r ${getSpeakerBgColor(segment.speaker)} ${getSpeakerColor(segment.speaker)}`}
+            >
+              <div className="flex items-center gap-2 mb-2">
+                {segment.speaker !== undefined && (
+                  <span className="text-xs font-semibold px-2 py-0.5 rounded bg-background/50">
+                    Speaker {segment.speaker}
+                  </span>
+                )}
+                <div className="text-xs text-muted-foreground">
+                  {formatTime(segment.start)} - {formatTime(segment.end)}
+                </div>
+              </div>
+              <div className="text-sm leading-relaxed">
+                {segment.words.map((word, wordIndex) => {
+                  const isMuted = isWordMuted(word.start, word.end);
+                  const isSelected = isWordSelected(word);
+                  const isActive = isWordActive(word);
+                  const detection = getWordDetection(word);
+                  const detectionColors = detection ? getCategoryColor(detection.category) : null;
+                  const isDetectedAndRedacted = detection && isDetectionRedacted(detection);
+
+                  return (
+                    <span key={wordIndex} className="inline-block mr-1 group relative">
+                      <span
+                        ref={isActive ? activeWordRef : null}
+                        className={`cursor-pointer rounded px-1 transition-all ${
+                          isActive
+                            ? 'bg-yellow-300 dark:bg-yellow-600 text-yellow-900 dark:text-yellow-100 font-bold ring-2 ring-yellow-500'
+                            : isSelected
+                            ? 'bg-primary text-primary-foreground'
+                            : isDetectedAndRedacted && detectionColors
+                            ? `${detectionColors.bg} ${detectionColors.text} font-medium ring-2 ${detectionColors.border} line-through opacity-60`
+                            : detection && detectionColors
+                            ? `${detectionColors.bg} ${detectionColors.text} font-medium ring-1 ${detectionColors.border}`
+                            : isMuted
+                            ? 'bg-destructive/20 text-destructive line-through'
+                            : 'hover:bg-primary/10'
+                        }`}
+                        onMouseDown={() => handleWordMouseDown(word)}
+                        onMouseEnter={() => handleWordMouseEnter(word)}
+                        onClick={(e) => {
+                          // Only trigger single-click if not selecting
+                          if (!isSelecting && selectedWords.length === 0) {
+                            handleWordClick(word.start, word.end);
+                          }
+                          e.preventDefault();
+                        }}
+                      >
+                        {word.word}
+                      </span>
+                      {!isSelecting && selectedWords.length === 0 && !isActive && (
+                        <span className="absolute -top-8 left-0 hidden group-hover:flex items-center gap-1 bg-popover text-popover-foreground text-xs px-2 py-1 rounded border shadow-md whitespace-nowrap z-10">
+                          {detection ? (
+                            <>
+                              <Sparkles className="h-3 w-3" />
+                              {isDetectedAndRedacted ? 'Redacted' : 'Detected'}: {getCategoryLabel(detection.category)}
+                            </>
+                          ) : isMuted ? (
+                            <>
+                              <VolumeX className="h-3 w-3" />
+                              Muted
+                            </>
+                          ) : (
+                            <>
+                              <Volume2 className="h-3 w-3" />
+                              Click to mute
+                            </>
+                          )}
+                        </span>
+                      )}
+                    </span>
+                  );
+                })}
               </div>
             </div>
-            <div className="text-sm leading-relaxed">
-              {segment.words.map((word, wordIndex) => {
-                const isMuted = isWordMuted(word.start, word.end);
-                const isSelected = isWordSelected(word);
-                const isActive = isWordActive(word);
-                const detection = getWordDetection(word);
-                const detectionColors = detection ? getCategoryColor(detection.category) : null;
-                const isDetectedAndRedacted = detection && isDetectionRedacted(detection);
+          ))}
+        </div>
+      </div>
 
-                return (
-                  <span key={wordIndex} className="inline-block mr-1 group relative">
-                    <span
-                      ref={isActive ? activeWordRef : null}
-                      className={`cursor-pointer rounded px-1 transition-all ${
-                        isActive
-                          ? 'bg-yellow-300 dark:bg-yellow-600 text-yellow-900 dark:text-yellow-100 font-bold ring-2 ring-yellow-500'
-                          : isSelected
-                          ? 'bg-primary text-primary-foreground'
-                          : isDetectedAndRedacted && detectionColors
-                          ? `${detectionColors.bg} ${detectionColors.text} font-medium ring-2 ${detectionColors.border} line-through opacity-60`
-                          : detection && detectionColors
-                          ? `${detectionColors.bg} ${detectionColors.text} font-medium ring-1 ${detectionColors.border}`
-                          : isMuted
-                          ? 'bg-destructive/20 text-destructive line-through'
-                          : 'hover:bg-primary/10'
-                      }`}
-                      onMouseDown={() => handleWordMouseDown(word)}
-                      onMouseEnter={() => handleWordMouseEnter(word)}
-                      onClick={(e) => {
-                        // Only trigger single-click if not selecting
-                        if (!isSelecting && selectedWords.length === 0) {
-                          handleWordClick(word.start, word.end);
-                        }
-                        e.preventDefault();
-                      }}
-                    >
-                      {word.word}
-                    </span>
-                    {!isSelecting && selectedWords.length === 0 && !isActive && (
-                      <span className="absolute -top-8 left-0 hidden group-hover:flex items-center gap-1 bg-popover text-popover-foreground text-xs px-2 py-1 rounded border shadow-md whitespace-nowrap z-10">
-                        {detection ? (
-                          <>
-                            <Sparkles className="h-3 w-3" />
-                            {isDetectedAndRedacted ? 'Redacted' : 'Detected'}: {getCategoryLabel(detection.category)}
-                          </>
-                        ) : isMuted ? (
-                          <>
-                            <VolumeX className="h-3 w-3" />
-                            Muted
-                          </>
-                        ) : (
-                          <>
-                            <Volume2 className="h-3 w-3" />
-                            Click to mute
-                          </>
-                        )}
-                      </span>
-                    )}
-                  </span>
-                );
-              })}
-            </div>
-          </div>
-        ))}
-      </div>
-      </div>
+      <ResizableDivider direction="vertical" onResize={handleSidebarResize} />
 
       {/* Right side: Detection Results Panel */}
-      <div className="w-96">
+      <div
+        className="flex-shrink-0 h-full min-h-0"
+        style={{ width: `${sidebarWidth}px` }}
+      >
         <DetectionResultsPanel
+          key={timelineItemId}
           segments={timelineItem.transcript.segments}
           onDetectionsFound={handleDetectionsFound}
           detections={detections}
